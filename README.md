@@ -46,11 +46,6 @@ Computational Workflows, Model-based Engineering, High-Throughput Computing, Unc
         ```
         micromamba install conda-forge::curl bioconda::nextflow=24.10.5
         ```
-
 3. Apptainer
-   - Apptainer is a containerization tool that allows us to create and run containers. It is similar to Docker but is designed for high-performance computing (HPC) environments.
-   - To install Apptainer, follow the instructions [here](https://apptainer.org/docs/admin/latest/installation.html#installing-apptainer).
-  
-4. Docker
-   - Docker is a containerization tool that allows us to create and run containers. It is widely used for developing, shipping, and running applications.
-   - To install Docker, follow the instructions [here](https://docs.docker.com/get-docker/).
+    - Apptainer is a containerization tool that allows creating and running containers. It is similar to Docker but is designed to be more lightweight and portable. Apptainer containers can be run on any system including HPCs without requiring root privileges.
+    - For installation, follow the instructions [here](https://apptainer.org/docs/admin/latest/installation.html#installing-apptainer) 
