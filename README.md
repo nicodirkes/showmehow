@@ -34,6 +34,7 @@ Computational Workflows, Model-based Engineering, High-Throughput Computing, Unc
     - Nextflow is a workflow management system that allows writing and executing   data-driven workflows. It is designed to be portable and can run on various platforms, including local machines, clusters, and cloud environments. 
     - For installation, follow the instructions [here](https://www.nextflow.io/docs/latest/getstarted.html#installation) OR
     - use Conda/Mamba/Micromamba with the following commands:
+  
         Using conda:  
         ```
         conda install conda-forge::curl bioconda::nextflow=24.10.5
