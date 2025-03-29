@@ -18,3 +18,38 @@ The demonstrated blueprints can be readily adapted to develop highly interoperab
 
 ## Keywords
 Computational Workflows, Model-based Engineering, High-Throughput Computing, Uncertainty Quantification
+
+
+## Usage
+
+### Requirements
+
+1. Conda or Mamba
+    - Conda is a package manager that allows installing and managing software packages and their dependencies. It is widely used in the scientific computing community.
+    - Mamba/Micromamba is a fast, drop-in replacement for Conda that uses parallel downloading and dependency resolution to speed up package installation.
+    - To install Conda, follow the instructions on the [Conda website](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html).
+    - To install Mamba, follow the instructions on the [Mamba website](https://mamba.readthedocs.io/en/latest/installation.html).
+    - To install Micromamba, follow the instructions on the [Micromamba website](https://mamba.readthedocs.io/en/latest/installation.html#micromamba).
+2. Nextflow 
+    - Nextflow is a workflow management system that allows writing and executing   data-driven workflows. It is designed to be portable and can run on various platforms, including local machines, clusters, and cloud environments. For the official installation instructions, visit the [Nextflow website](https://www.nextflow.io/docs/latest/getstarted.html).
+    - As an easier alternative, we can use the following commands:
+        Using conda:  
+        ```
+        conda install conda-forge::curl bioconda::nextflow=24.10.5
+        ```
+        Using mamba:  
+        ```
+        mamba install conda-forge::curl bioconda::nextflow=24.10.5
+        ```
+        Using micromamba:  
+        ```
+        micromamba install conda-forge::curl bioconda::nextflow=24.10.5
+        ```
+
+3. Apptainer
+   - Apptainer is a containerization tool that allows us to create and run containers. It is similar to Docker but is designed for high-performance computing (HPC) environments.
+   - To install Apptainer, follow the instructions on the [Apptainer website](https://apptainer.org/docs/admin/latest/installation/).
+  
+4. Docker
+   - Docker is a containerization tool that allows us to create and run containers. It is widely used for developing, shipping, and running applications.
+   - To install Docker, follow the instructions on the [Docker website](https://docs.docker.com/get-docker/).
