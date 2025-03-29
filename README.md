@@ -1,5 +1,5 @@
 # The I in FAIR: Solutions for HeterOgeneous Workflows in Model-based Engineering applications – SHOWME.how
-This repository contains data used in the contribution to the NFDI4ING Community Meeting - Innovating Software Solutions in Engineering Research -
+This repository contains data used in the contribution to the NFDI4ING Community Meeting - "Innovating Software Solutions in Engineering Research"
 
 ## Authors
 - Alan Correa (RWTH Aachen, presenting author)
