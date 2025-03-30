@@ -10,7 +10,7 @@ process sayHello {
 
     script:
     """
-    echo 'Hello World!' > output.txt
+    echo 'Hello World!'
     """
 }
 workflow {
