@@ -1,0 +1,18 @@
+#!/usr/bin/env nextflow
+
+
+process useCase1 {
+
+    output:
+      stdout
+
+    script:
+    """
+    echo 'Use Case 1'
+    """
+}
+workflow {
+
+    // emit a greeting
+    useCase1()
+}
