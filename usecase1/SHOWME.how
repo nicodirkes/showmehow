@@ -23,19 +23,19 @@ workflow {
         FORWARD_MODEL.out
         )
   
-    // UQ_STATUS () // Create a named pipe for status updates
-    // SERVE_SURROGATE ( 
-    //     UQ_STATUS.out.pipe,
-    //     file("$moduleDir/surrogate/serve_surrogate.R"),
-    //     TRAIN_SURROGATE.out,
-    //     "ScalarGP_Umax"
-    //     ) 
-    // MCMC ( 
-    //     UQ_STATUS.out.pipe,
-    //     file("$moduleDir/mcmc/MCMC_um.py"),
-    //     "ScalarGP_Umax",
-    //     file("$moduleDir/mcmc/calibration_data.csv")
-    //     ) 
+    UQ_STATUS () // Create a named pipe for status updates
+    SERVE_SURROGATE ( 
+        UQ_STATUS.out.pipe,
+        file("$moduleDir/surrogate/serve_surrogate.R"),
+        TRAIN_SURROGATE.out,
+        "ScalarGP_Umax"
+        ) 
+    MCMC ( 
+        UQ_STATUS.out.pipe,
+        file("$moduleDir/mcmc/MCMC_um.py"),
+        "ScalarGP_Umax",
+        file("$moduleDir/mcmc/calibration_data.csv")
+        ) 
 }
 
 
