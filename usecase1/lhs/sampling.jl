@@ -1,5 +1,3 @@
-using Pkg
-working_directory = dirname(@__FILE__)
 using QuasiMonteCarlo, Distributions
 using CSV
 using DataFrames
@@ -16,7 +14,7 @@ end
 
 StructTypes.StructType(::Type{LHS_Input}) = StructTypes.Struct()
 
-json_string = read(joinpath(working_directory, ARGS[1]), String)
+json_string = read(ARGS[1])  # Read the JSON file as a string
 input = JSON3.read(json_string, LHS_Input)
 
 
@@ -34,4 +32,4 @@ df = DataFrame(Matrix(s'), :auto)  # Specify :auto for automatic column names
 
 
 # # Save the DataFrame to a CSV file without headers
-CSV.write(joinpath(working_directory, ARGS[2]), df)
+CSV.write(ARGS[2], df)
