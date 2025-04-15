@@ -32,7 +32,7 @@ def log_posterior_Umax(theta, data, model):
 
 
 def compute_mcmc(log_posterior, data, model,
-                   nwalkers=500, nburn=5000, nsteps=10000):
+                   nwalkers=20, nburn=500, nsteps=1000):
     #TODO These need to be passed as arguments to the function
 
     ndim = 2  # this determines the model

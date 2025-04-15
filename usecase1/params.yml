@@ -2,5 +2,5 @@ LHS:
   bounds: 
     parameter1: [0.02, 0.3]
     parameter2: [100, 2200]
-  samples: 1000
+  samples: 10
     

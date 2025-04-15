@@ -8,10 +8,6 @@ workflow {
     LHS (
         params.LHS
         )
-    // LHS_ext_jl(
-    //     file("$moduleDir/lhs/sampling.jl"),
-    //     setupLHS.out,
-    //     )
     
     FORWARD_MODEL (
         LHS.out,
@@ -23,27 +19,35 @@ workflow {
         FORWARD_MODEL.out
         )
   
-    UQ_STATUS () // Create a named pipe for status updates
+    UQ_STATUS (
+        TRAIN_SURROGATE.out.done
+        ) 
+    
     SERVE_SURROGATE ( 
         UQ_STATUS.out.pipe,
         file("$moduleDir/surrogate/serve_surrogate.R"),
-        TRAIN_SURROGATE.out,
-        "ScalarGP_Umax"
+        TRAIN_SURROGATE.out.model,
+        "ScalarGP_Umax",
+        port_number = 4242
         ) 
+
     MCMC ( 
         UQ_STATUS.out.pipe,
         file("$moduleDir/mcmc/MCMC_um.py"),
         "ScalarGP_Umax",
         file("$moduleDir/mcmc/calibration_data.csv")
         ) 
-}
 
+    // LHS_ext_jl(
+    //     file("$moduleDir/lhs/sampling.jl"),
+    //     setupLHS.out,
+    //     )
+}
 
 
 process LHS {
 
     container "file://$moduleDir/lhs/lhs_box.sif"
-
     publishDir "$moduleDir/outputs", mode: 'copy'
     
 
@@ -82,30 +86,10 @@ process LHS {
     """ 
 }
 
-process LHS_ext_jl {
-
-    container "file://$moduleDir/lhs/lhs_box.sif"
-
-    publishDir "$moduleDir/outputs", mode: 'copy'
-    
-
-    input:
-      path jl_script
-      path in
-
-    output:
-      file "lhs_output.csv"
-
-    script:
-    """
-    
-    julia --history-file=no ${jl_script} ${in} lhs_output.csv
-
-    """ 
-}
-
 process FORWARD_MODEL {
     container "file://$moduleDir/forward_model/forward_model.sif"
+    publishDir "$moduleDir/outputs", mode: 'copy'
+
     
     input:
       path lhs_samples
@@ -163,13 +147,16 @@ process FORWARD_MODEL {
 
 process TRAIN_SURROGATE {
     container "file://$moduleDir/surrogate/surrogate.sif"
+    publishDir "$moduleDir/outputs", mode: 'copy'
+
 
     input:
     path design
     path response
 
     output:
-    path "ScalarGP_Umax.rds" 
+    path "ScalarGP_Umax.rds",  emit: model
+    val true, emit: done
 
     script:
         """
@@ -200,6 +187,9 @@ process TRAIN_SURROGATE {
 }
 
 process UQ_STATUS {
+    input:
+    val ready
+
     script:
     """
     mkfifo status_info
@@ -210,7 +200,7 @@ process UQ_STATUS {
 }
 
 process SERVE_SURROGATE {
-    container "file://$moduleDir/surrogate/surrogate.sif"
+    conda "$moduleDir/surrogate/environment.yml"
     cache 'lenient'
 
     input:
@@ -218,33 +208,39 @@ process SERVE_SURROGATE {
     path script
     path model
     val model_name
-
-    
+    val port_number
 
     script:
     """
     #!/bin/bash
 
-    # Sleep 100000 represents the model server
-    # which is started in the background
-    # and its process ID is stored, inorder to kill later
+
+    # Start the model server in the background
+    Rscript ${script} ${model} ${model_name}  & 
+    PID=\$!
+    echo \$PID
+    # Wait for the model server to start
+    while ! nc -z localhost ${port_number}; do
+        sleep 1
+    done
+    echo "model_server_up" > $status
+    echo "Model server is up and running on port ${port_number}"
+
+    # Monitor the status 
+    cat $status  &
+    STATUS_PID=\$!
+    wait \$STATUS_PID
+
+    # Stop the model server when the signal is received
+    kill \$PID
     
-    Rscript ${script} ${model} ${model_name} & 
-    PID=\$! && echo "Model Server Started" && echo "complete" > $status
-        
-    # Wait for MCMC to finish | Look for "mcmc=0" in status
-    cat $status
-    
-    # Stop model server (kill process)
-    kill \$PID &> /dev/null
-    echo "Model Server Stopped"
-    rm $status
     """
 }
 
 process MCMC {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
+    debug true
     publishDir "$moduleDir/outputs", mode: 'copy'
     
     input:
@@ -256,18 +252,36 @@ process MCMC {
 
     script:
     """
-    # Wait for MODEL to start | Look for "model=1" in status
-    cat $status
-    
-    echo "MCMC Started"
+    cat $status # blocked until the model server is up
+
     python ${script} ${calibration_data} ${model_name}
-    echo "MCMC Finished"
-    # Store MCMC results
     
-    echo "mcmc_complete" > $status
+    echo "mcmc_done" > $status # signal to stop the model server
     """
 
     output:
     path "mcmc_trace.npy"
     path "mcmc_full_chain.npy"
+}
+
+process LHS_ext_jl {
+
+    container "file://$moduleDir/lhs/lhs_box.sif"
+
+    publishDir "$moduleDir/outputs", mode: 'copy'
+    
+
+    input:
+      path jl_script
+      path in
+
+    output:
+      file "lhs_output.csv"
+
+    script:
+    """
+    
+    julia --history-file=no ${jl_script} ${in} lhs_output.csv
+
+    """ 
 }
