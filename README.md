@@ -2,8 +2,16 @@
 This repository contains data used in the contribution to the NFDI4ING Community Meeting - "Innovating Software Solutions in Engineering Research"
 
 ## Authors
-- Alan Correa (RWTH Aachen, presenting author)
-- V Mithlesh Kumar (RWTH Aachen), Anil Yildiz (RWTH Aachen), Julia Kowalski (RWTH Aachen)
+- Alan Correa (1) presenting author)
+- V Mithlesh Kumar (1)
+- Anil Yildiz (1)
+- Julia Kowalski (1)
+
+## Contributors
+- Dipankul Bhatacharya (1)
+- Oliver Ahrend (1)
+
+(1) - Methods for Model-based Development in Computational Engineerng, RWTH Aachen
 
 
 ## Abstract:
@@ -18,6 +26,8 @@ The demonstrated blueprints can be readily adapted to develop highly interoperab
 
 ## Keywords
 Computational Workflows, Model-based Engineering, High-Throughput Computing, Uncertainty Quantification
+
+
 
 
 ## Usage
