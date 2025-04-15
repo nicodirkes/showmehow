@@ -2,7 +2,7 @@
 This repository contains data used in the contribution to the NFDI4ING Community Meeting - "Innovating Software Solutions in Engineering Research"
 
 ## Authors
-- Alan Correa (1) presenting author)
+- Alan Correa (1)
 - V Mithlesh Kumar (1)
 - Anil Yildiz (1)
 - Julia Kowalski (1)
