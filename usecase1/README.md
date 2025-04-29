@@ -2,7 +2,7 @@
 
 This usecase shows you how to calibrate the parameters of a Mass Point Model (MPM) using Monte-Carlo Markov Chain method.
 
-## Prerequisites
+## Pre-requisites
 In order to use containers (apptainer) for certain computational units, we first need to build them. This can be done by running the following command
 
 ```
@@ -12,16 +12,23 @@ cd ..
 ```
 
 An example for the `lhs` computational unit is shown below. 
-``
+```
 cd lhs
 apptainer build lhs.sif lhs.def
 cd ..
 ```
 
 ## Running the Workflow
+We use `nextflow` to run this usecase which is specified through the SHOWME.how file. 
 
-The usecase can be run by executing the following command:
+1. Create and activate the conda environment
+```
+conda env create -f environment.yml
+conda activate showmehow
+```
+
+2. Run the workflow
 
 ```
-nextflow run SHOWME.how -params-file params.yaml
+nextflow run SHOWME.how -params-file params.yml
 ```

@@ -13,6 +13,5 @@ process useCase2 {
 }
 workflow {
 
-    // emit a greeting
-    useCase1()
+    useCase2()
 }

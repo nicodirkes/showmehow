@@ -1,18 +1,18 @@
 #!/usr/bin/env nextflow
 
 
-process useCase2 {
+process useCase4 {
 
     output:
       stdout
 
     script:
     """
-    echo 'Use Case 2'
+    echo 'Use Case 4'
     """
 }
 workflow {
 
     // emit a greeting
-    useCase1()
+    useCase4()
 }

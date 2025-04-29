@@ -37,7 +37,7 @@ workflow {
 
 process LHS {
 
-    container "file://$moduleDir/lhs/lhs_box.sif"
+    container "file://$moduleDir/lhs/lhs.sif"
     publishDir "$moduleDir/outputs", mode: 'copy'
     
 
