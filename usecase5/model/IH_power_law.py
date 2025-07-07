@@ -1,0 +1,1 @@
+print("IH_power_law")

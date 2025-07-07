@@ -1,0 +1,6 @@
+name: IH_power_law
+channels:
+  - conda-forge
+dependencies:
+  - scipy
+  - numpy
