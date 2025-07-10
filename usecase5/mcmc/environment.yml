@@ -1,0 +1,11 @@
+name: mcmc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pip
+  - pip:
+    - tqdm
+    - emcee
+    - umbridge
