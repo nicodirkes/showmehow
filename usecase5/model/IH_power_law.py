@@ -76,9 +76,7 @@ def IH_powerLaw_algebraic(x, p):
 
     return computeIH_powerLaw_algebraic(t_exp, sigma, p) * 100  # convert to percentage
 
-def main():
-    """Example usage of the IH power-law models."""
-
+def compute_model_strain_based(paramters):
     # load data from CSV file
     data = csv.reader(open('data.csv', 'r'))
     header = next(data)
@@ -88,14 +86,25 @@ def main():
     t = data[:, header.index('exposure_time')]
     sigma_exp = data[:, header.index('shear_stress')]
 
-    # example parameters for the power-law model
-    parameters = [1.228e-7, 1.9918, 0.6606]
-
     input_data = np.array([t, sigma_exp]).T
 
-    IH_strainBased = [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
-    IH_stressBased = [ IH_powerLaw_stressBased(x, parameters) for x in input_data ]
-    IH_stressBased_algebraic = [ IH_powerLaw_algebraic(x, parameters) for x in input_data ]
+    return [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
 
-    # Compare models with experimental data
-    IH_exp = data[:, header.index('fHb_avg')]
+def main():
+    """Example usage of the IH power-law models."""
+
+
+
+
+    # example parameters for the power-law model
+    parameters = [1.228e-7, 1.9918, 0.6606]
+    print(compute_model_strain_based(parameter))
+    
+
+    # IH_strainBased = [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
+    # IH_stressBased = [ IH_powerLaw_stressBased(x, parameters) for x in input_data ]
+    # IH_stressBased_algebraic = [ IH_powerLaw_algebraic(x, parameters) for x in input_data ]
+
+
+if __name__ == "__main__":
+    main()

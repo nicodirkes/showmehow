@@ -1,6 +1,5 @@
-name: IH_power_law
+name: stage_data
 channels:
   - conda-forge
 dependencies:
-  - scipy
-  - numpy
+  - coscine
