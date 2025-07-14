@@ -18,7 +18,7 @@ process STAGE_DATA {
       path token
 
     output:
-      file "**/data*.csv"
+      path "data*.csv"
 
     script:
         """
@@ -29,11 +29,10 @@ process STAGE_DATA {
 	        token = fp.read()
         # You can now use token to intialize the coscine ApiClient!
 
-        print(token)
         client = coscine.ApiClient(token)
         resource = client.project("showmehow_usecase5").resource("Field Data")
-        resource.download(path="./")
-
+        for file in resource.files():
+            file.download()
         """
 
 }
