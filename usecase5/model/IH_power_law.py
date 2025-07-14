@@ -76,30 +76,57 @@ def IH_powerLaw_algebraic(x, p):
 
     return computeIH_powerLaw_algebraic(t_exp, sigma, p) * 100  # convert to percentage
 
-def compute_model_strain_based(paramters):
-    # load data from CSV file
-    data = csv.reader(open('data.csv', 'r'))
+def get_input_data(fname):
+    """
+    Load input data from a CSV file.
+    The CSV file should contain columns for 'exposure_time' and 'shear_stress'.
+    Returns a 2D numpy array with columns [exposure_time, shear_stress].
+    """
+    data = csv.reader(open(fname, 'r'))
     header = next(data)
     data = np.array(list(data), dtype=float)
 
-    # get input data by header
+    # get data by header
     t = data[:, header.index('exposure_time')]
     sigma_exp = data[:, header.index('shear_stress')]
 
-    input_data = np.array([t, sigma_exp]).T
+    return np.array([t, sigma_exp]).T
 
-    return [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
+def get_IH_model(model_name):
+    """
+    Returns the appropriate IH model function based on the model name.
+    """
+    if model_name == 'IH_powerLaw_strainBased':
+        return IH_powerLaw_strainBased
+    elif model_name == 'IH_powerLaw_stressBased':
+        return IH_powerLaw_stressBased
+    elif model_name == 'IH_powerLaw_algebraic':
+        return IH_powerLaw_algebraic
+    else:
+        raise ValueError(f"Unknown model name: {model_name}")
+
+def evaluate_model(parameters, fname='data.csv', model_name='IH_powerLaw_strainBased'):
+    """
+    Computes IH using the specified model with given parameters.
+    """
+
+    IH_model = get_IH_model(model_name)
+    input_data = get_input_data(fname)
+
+    return [ IH_model(x, parameters) for x in input_data ]
 
 def main():
     """Example usage of the IH power-law models."""
 
-
-
-
     # example parameters for the power-law model
     parameters = [1.228e-7, 1.9918, 0.6606]
-    print(compute_model_strain_based(parameter))
     
+    fname_data = 'data.csv'
+    output_data_strainBased = evaluate_model(parameters, fname=fname_data, model_name='IH_powerLaw_strainBased')
+    output_data_stressBased = evaluate_model(parameters, fname=fname_data, model_name='IH_powerLaw_stressBased')
+
+    print("Output data (strain-based):", output_data_strainBased)
+    print("Output data (stress-based):", output_data_stressBased)
 
     # IH_strainBased = [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
     # IH_stressBased = [ IH_powerLaw_stressBased(x, parameters) for x in input_data ]
