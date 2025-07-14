@@ -105,13 +105,13 @@ def get_IH_model(model_name):
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
-def evaluate_model(parameters, fname='data.csv', model_name='IH_powerLaw_strainBased'):
+def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased'):
     """
     Computes IH using the specified model with given parameters.
     """
 
     IH_model = get_IH_model(model_name)
-    input_data = get_input_data(fname)
+    input_data = get_input_data(fname_controlVars)
 
     return [ IH_model(x, parameters) for x in input_data ]
 
