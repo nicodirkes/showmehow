@@ -108,6 +108,12 @@ def get_IH_model(model_name):
 def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased'):
     """
     Computes IH using the specified model with given parameters.
+    Inputs:
+    - parameters: list of model parameters [A, alpha, beta]
+    - fname_controlVars: path to the CSV file containing control variables
+    - model_name: name of the model to use ('IH_powerLaw_strainBased', 'IH_powerLaw_stressBased', 'IH_powerLaw_algebraic')
+    Returns:
+    - A list of computed IH values for each control variable point.
     """
 
     IH_model = get_IH_model(model_name)
