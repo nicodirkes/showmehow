@@ -158,8 +158,8 @@ def get_IH_model(model_name, mu, f1, f2, V_RBC, log=False):
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
-def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased',
-                   mu=0.0035, f1=5.0, f2=4.2298e-4, V_RBC=147.494, log=False):
+def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased', log=False,
+                   mu=0.0035, f1=5.0, f2=4.2298e-4, V_RBC=147.494):
     """
     Computes IH using the specified model with given parameters.
     Inputs:
@@ -192,7 +192,7 @@ def main():
     output_data_stressBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_stressBased')
     output_data_strainBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_strainBased', f1=5.0)
     output_data_pore = evaluate_model(parameters_pore, fname_controlVars=fname_data, model_name='IH_poreFormation', mu=0.00424, f1=5.0, f2=4.2298e-4, V_RBC=147.494)
-    output_data_pore_log = evaluate_model([np.log(parameters_pore[0]), parameters_pore[1]], fname_controlVars=fname_data, model_name='IH_poreFormation', mu=0.00424, f1=5.0, f2=4.2298e-4, V_RBC=147.494, log=True)
+    output_data_pore_log = evaluate_model([np.log(parameters_pore[0]), parameters_pore[1]], fname_controlVars=fname_data, model_name='IH_poreFormation',log=True, mu=0.00424, f1=5.0, f2=4.2298e-4, V_RBC=147.494)
 
     print("Output data (stress-based):", output_data_stressBased)
     print("Output data (strain-based):", output_data_strainBased)
