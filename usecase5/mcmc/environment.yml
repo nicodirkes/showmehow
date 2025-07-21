@@ -5,6 +5,8 @@ dependencies:
   - python=3.12
   - numpy
   - pip
+  - pandas
+  - scipy
   - pip:
     - tqdm
     - emcee

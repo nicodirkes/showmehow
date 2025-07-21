@@ -3,10 +3,10 @@ import umbridge
 import numpy as np
 from scipy.integrate import solve_ivp
 import pandas as pd
-import os  
+import os 
 
 class IHPowerLawModel(umbridge.Model):
-    def __init__(self, model_name="IH_powerLaw_strainBased", data_file="reshaped_human_data.csv"):
+    def __init__(self, model_name="IH_powerLaw_strainBased", data_file="data_ding_human_processed_linear.csv"):
         super().__init__("forward")
         self.model_name = model_name
         self.data_file = data_file
@@ -101,13 +101,13 @@ class IHPowerLawModel(umbridge.Model):
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 
-    def evaluate_model(self, parameters, fname_controlVars='reshaped_human_data.csv', model_name='IH_powerLaw_strainBased'):
+    def evaluate_model(self, parameters, fname_controlVars='data_ding_human_processed_linear.csv', model_name='IH_powerLaw_strainBased'):
         IH_model = self.get_IH_model(model_name)
         input_data = self.get_input_data(fname_controlVars)
         return [IH_model(x, parameters) for x in input_data]
 
 def main():
-    data_file = os.getenv("DATA_FILE", "reshaped_human_data.csv")
+    data_file = os.getenv("DATA_FILE", "data_ding_human_processed_linear.csv")
     port = int(os.getenv("UMBRIDGE_PORT", 4242))
 
     models = [
