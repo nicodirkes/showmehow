@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 import csv
+from IH_pore import IH_poreFormation
 
 def computeGeff_shear(t, G, f1=5.0, n=100):
     t0 = t[0]
@@ -92,7 +93,7 @@ def get_input_data(fname):
 
     return np.array([t, sigma_exp]).T
 
-def get_IH_model(model_name):
+def get_IH_model(model_name, mu, f1, f2):
     """
     Returns the appropriate IH model function based on the model name.
     """
@@ -102,21 +103,26 @@ def get_IH_model(model_name):
         return IH_powerLaw_stressBased
     elif model_name == 'IH_powerLaw_algebraic':
         return IH_powerLaw_algebraic
+    elif model_name == 'IH_poreFormation':
+        return lambda x, p: IH_poreFormation(x, p, mu=mu, f1=f1, f2=f2)
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
-def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased'):
+def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased',
+                   mu=0.0035, f1=5.0, f2=4.2298e-4):
     """
     Computes IH using the specified model with given parameters.
     Inputs:
     - parameters: list of model parameters [A, alpha, beta]
     - fname_controlVars: path to the CSV file containing control variables
     - model_name: name of the model to use ('IH_powerLaw_strainBased', 'IH_powerLaw_stressBased', 'IH_powerLaw_algebraic')
+    - mu: viscosity (default 0.0035), only used for pore formation model
+    - f1, f2: parameters for pore formation model (default 5.0, 4.2298e-4), only used for pore formation model
     Returns:
     - A list of computed IH values for each control variable point.
     """
 
-    IH_model = get_IH_model(model_name)
+    IH_model = get_IH_model(model_name, mu, f1, f2)
     input_data = get_input_data(fname_controlVars)
 
     return [ IH_model(x, parameters) for x in input_data ]
@@ -126,17 +132,19 @@ def main():
 
     # example parameters for the power-law model
     parameters = [1.228e-7, 1.9918, 0.6606]
+
+    # example parameters for the pore formation model
+    parameters_pore = [1e-4, 0.8]
     
     fname_data = 'data.csv'
-    output_data_strainBased = evaluate_model(parameters, fname=fname_data, model_name='IH_powerLaw_strainBased')
-    output_data_stressBased = evaluate_model(parameters, fname=fname_data, model_name='IH_powerLaw_stressBased')
+    output_data_strainBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_strainBased')
+    output_data_stressBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_stressBased')
+    output_data_pore = evaluate_model(parameters_pore, fname_controlVars=fname_data, model_name='IH_poreFormation', mu=0.00424, f1=5.0, f2=4.2298e-4)
+
 
     print("Output data (strain-based):", output_data_strainBased)
     print("Output data (stress-based):", output_data_stressBased)
-
-    # IH_strainBased = [ IH_powerLaw_strainBased(x, parameters) for x in input_data ]
-    # IH_stressBased = [ IH_powerLaw_stressBased(x, parameters) for x in input_data ]
-    # IH_stressBased_algebraic = [ IH_powerLaw_algebraic(x, parameters) for x in input_data ]
+    print("Output data (pore formation):", output_data_pore)
 
 
 if __name__ == "__main__":
