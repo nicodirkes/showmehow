@@ -1,5 +1,5 @@
 import numpy as np
-# from IH_power_law import get_input_data, evaluate_model
+from scipy.integrate import quad
 
 def computeAreaStrain(lamb):
     """
@@ -88,7 +88,6 @@ def computeIntegral_poreFormation(t_exp, G, f1, f2):
     int_fun = lambda t: computePoreArea(computeAreaStrain(computeLambda(t, G, f1, f2)))
 
     # Numerical integration using scipy's quad function
-    from scipy.integrate import quad
     integral_value, _ = quad(int_fun, 0, t_exp)
     return integral_value
 
