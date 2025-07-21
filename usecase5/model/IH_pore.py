@@ -91,7 +91,7 @@ def computeIntegral_poreFormation(t_exp, G, f1, f2):
     integral_value, _ = quad(int_fun, 0, t_exp)
     return integral_value
 
-def IH_poreFormation(x, p, mu=0.0035, f1=5.0, f2=4.2298e-4):
+def IH_poreFormation(x, p, log, mu=0.0035, f1=5.0, f2=4.2298e-4):
     """
     Model #4: Compute IH with pore formation model based on strain-based morphology:
     - x = [t_exp, sigma] (control variables)
@@ -112,4 +112,7 @@ def IH_poreFormation(x, p, mu=0.0035, f1=5.0, f2=4.2298e-4):
 
     Apt = computeIntegral_poreFormation(t_exp, G, f1, f2)
 
-    return h * (G ** k) * Apt / V_RBC * 100  # convert to percentage
+    if log:
+        return h - np.log(V_RBC) + k * np.log(G) + np.log(Apt) + np.log(100)
+    else:
+        return h * (G ** k) * Apt / V_RBC * 100

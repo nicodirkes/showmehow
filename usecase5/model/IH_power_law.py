@@ -1,81 +1,31 @@
 import numpy as np
-from scipy.integrate import solve_ivp
+from scipy.integrate import quad
 import csv
 from IH_pore import IH_poreFormation
 
-def computeGeff_shear(t, G, f1=5.0, n=100):
-    t0 = t[0]
-    t1 = t[1]
-    ti = np.linspace(t0, t1, n)
-    Geff = G * (1 - np.exp(-f1 * ti))
-    return ti, Geff
-
-def dlIHdt_powerLaw(t, sigma_all, t_all, A, alpha, beta):
-    # interpolate vector sigma to current time t
-    sigmai = np.interp(t, t_all, sigma_all)
-    return (A * sigmai**alpha) ** (1 / beta)
-
-def computeIH_powerLaw(t_all, sigma_all, parameters):
+def computeIH_powerLaw_strainBased(t, sigma, parameters, f1 = 5.0, log=False):
     A = parameters[0]
     alpha = parameters[1]
     beta = parameters[2]
 
     # solve ODE
-    dlIHdt = lambda t, y : dlIHdt_powerLaw(t, sigma_all, t_all, A, alpha, beta)
-    sol = solve_ivp(dlIHdt, [t_all[0], t_all[-1]], [0], t_eval=t_all)
-    IH = (sol.y[0][-1])**(beta)
-    return IH
+    sigma_eff = lambda t: sigma * (1.0 - np.exp(-f1 * t))
+    sigma_int, _ = quad(lambda t: sigma_eff(t) ** (alpha / beta), 0, t)
+    if log:
+        return A + beta * np.log(sigma_int) + np.log(100)
+    else:
+        return A * sigma_int ** beta * 100
 
-def computeIH_powerLaw_algebraic(t_exp, sigma_exp, parameters):
+def computeIH_powerLaw_stressBased(t_exp, sigma_exp, parameters, log=False):
     A = parameters[0]
     alpha = parameters[1]
     beta = parameters[2]
 
-    # Calculate IH using the algebraic formula
-    IH = A * (sigma_exp ** alpha) * (t_exp ** beta)
-    return IH
+    if log:
+        return A + alpha * np.log(sigma_exp) + beta * np.log(t_exp) + np.log(100)
+    else:
+        return A * (sigma_exp ** alpha) * (t_exp ** beta) * 100  # convert to percentage
 
-
-def IH_powerLaw_strainBased(x, p):
-    """
-    Model #1: Compute IH with power-law model based on strain-based morphology:
-    - x = [t_exp, sigma] (control variables)
-    - p = [A, alpha, beta] (model parameters)
-    """
-
-    t_exp = x[0] # exposure time
-    sigma = x[1] # stress
-
-    t_arr = np.array([0, t_exp])
-    t_strain, sigma_eff = computeGeff_shear(t_arr, sigma)
-    return computeIH_powerLaw(t_strain, sigma_eff, p) * 100  # convert to percentage
-
-def IH_powerLaw_stressBased(x, p):
-    """
-    Model #2: Compute IH with power-law model based on stress-based morphology:
-    - x = [t_exp, sigma] (control variables)
-    - p = [A, alpha, beta] (model parameters)
-    """
-
-    t_exp = x[0]  # exposure time
-    sigma = x[1]  # stress
-
-    t_arr = np.array([0, t_exp])
-    sigmai = np.ones_like(t_arr) * sigma  # constant shear stress for power-law
-    return computeIH_powerLaw(t_arr, sigmai, p) * 100  # convert to percentage
-
-def IH_powerLaw_algebraic(x, p):
-    """
-    Model #3: Compute IH with algebraic power-law model based on stress-based morphology:
-    - x = [t_exp, sigma] (control variables)
-    - p = [A, alpha, beta] (model parameters)
-    """
-
-    # Unpack values
-    t_exp = x[0]  # exposure time
-    sigma = x[1]  # stress
-
-    return computeIH_powerLaw_algebraic(t_exp, sigma, p) * 100  # convert to percentage
 
 def get_input_data(fname):
     """
@@ -93,23 +43,21 @@ def get_input_data(fname):
 
     return np.array([t, sigma_exp]).T
 
-def get_IH_model(model_name, mu, f1, f2):
+def get_IH_model(model_name, mu, f1, f2, log=False):
     """
     Returns the appropriate IH model function based on the model name.
     """
     if model_name == 'IH_powerLaw_strainBased':
-        return IH_powerLaw_strainBased
+        return lambda x, p: computeIH_powerLaw_strainBased(x[0], x[1], p, f1, log)
     elif model_name == 'IH_powerLaw_stressBased':
-        return IH_powerLaw_stressBased
-    elif model_name == 'IH_powerLaw_algebraic':
-        return IH_powerLaw_algebraic
+        return lambda x, p: computeIH_powerLaw_stressBased(x[0], x[1], p, log)
     elif model_name == 'IH_poreFormation':
-        return lambda x, p: IH_poreFormation(x, p, mu=mu, f1=f1, f2=f2)
+        return lambda x, p: IH_poreFormation(x, p, log, mu=mu, f1=f1, f2=f2)
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
 def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powerLaw_strainBased',
-                   mu=0.0035, f1=5.0, f2=4.2298e-4):
+                   mu=0.0035, f1=5.0, f2=4.2298e-4, log=False):
     """
     Computes IH using the specified model with given parameters.
     Inputs:
@@ -119,10 +67,11 @@ def evaluate_model(parameters, fname_controlVars='data.csv', model_name='IH_powe
     - mu: viscosity (default 0.0035), only used for pore formation model
     - f1, f2: parameters for pore formation model (default 5.0, 4.2298e-4), only used for pore formation model
     Returns:
+    - log (bool): whether to use logarithmic scaling, leading to log(IH) output
     - A list of computed IH values for each control variable point.
     """
 
-    IH_model = get_IH_model(model_name, mu, f1, f2)
+    IH_model = get_IH_model(model_name, mu, f1, f2, log)
     input_data = get_input_data(fname_controlVars)
 
     return [ IH_model(x, parameters) for x in input_data ]
@@ -140,11 +89,13 @@ def main():
     output_data_strainBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_strainBased')
     output_data_stressBased = evaluate_model(parameters, fname_controlVars=fname_data, model_name='IH_powerLaw_stressBased')
     output_data_pore = evaluate_model(parameters_pore, fname_controlVars=fname_data, model_name='IH_poreFormation', mu=0.00424, f1=5.0, f2=4.2298e-4)
+    output_data_pore_log = evaluate_model([np.log(parameters_pore[0]), parameters_pore[1]], fname_controlVars=fname_data, model_name='IH_poreFormation', mu=0.00424, f1=5.0, f2=4.2298e-4, log=True)
 
 
     print("Output data (strain-based):", output_data_strainBased)
     print("Output data (stress-based):", output_data_stressBased)
     print("Output data (pore formation):", output_data_pore)
+    print("Output data (pore formation, log):", np.exp(output_data_pore_log))
 
 
 if __name__ == "__main__":
