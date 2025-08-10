@@ -75,7 +75,7 @@ def computePoreArea(eps):
     return Ap
 
 def computeLambda(t, G, f1, f2):
-    Geff = G * (1 - np.exp(-f1 * t))
+    Geff = computeEffShearStrainBased(t, G, f1)
     f1f2 = f1**2 + f2**2 * Geff**2
     lamb2 = (f1**2 / f1f2) ** (1 / 3)
     lamb1 = lamb2 * (f1f2 + Geff*f2 * np.sqrt(f1f2)) / f1**2
@@ -83,38 +83,69 @@ def computeLambda(t, G, f1, f2):
 
     return [lamb1, lamb2, lamb3]
 
-def IH_poreFormation(t_exp, sigma, h, k, log=False, mu=0.0035, f1=5.0, f2=4.2298e-4, V_RBC=147.494):
+def computeEffShearStrainBased(t, G, f1):
+    return G * (1 - np.exp(-f1 * t))
+
+def computePoreAreaInterpolated(G):
+    if G < 3740:
+        return 0.0
+    elif G > 42000:
+        return 6.0
+    else:
+        # Coefficients of interpolation polynomial
+        p = [4.06157705e-02, -2.83266092e-05,  2.25830588e-08, -8.49450093e-13, 1.32415867e-17, -8.23845344e-23]
+        return p[0] + p[1]*G + p[2]*G**2 + p[3]*G**3 + p[4]*G**4 + p[5]*G**5
+
+def IH_poreFormation(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, f2=4.2298e-4, V_RBC=147.494):
     """
-    Model #4: Compute IH with pore formation model based on strain-based morphology.
+    Model #3: Compute IH with pore formation model based on strain-based morphology.
+    Sensible limits:
+    0 <= h <= 20
+    0 <= k <= 2
     """
-    G = sigma / mu  # shear rate
+    G = sigma_exp / mu  # shear rate
 
     # Compute integral of pore area formation
-    int_fun = lambda t: computePoreArea(computeAreaStrain(computeLambda(t, G, f1, f2)))
+    # int_fun = lambda t: computePoreArea(computeAreaStrain(computeLambda(t, G, f1, f2)))
+    int_fun = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G, f1))
     Apt, _ = quad(int_fun, 0, t_exp)
 
     if log:
         # avoid log(0) by adding a small constant
         Apt = max(Apt, 1e-10)  # ensure Apt is not zero for log calculation
-        return h - np.log(V_RBC) + k * np.log(G) + np.log(Apt) + np.log(100)
+        return -h - np.log(V_RBC) + k * np.log(G) + np.log(Apt) + np.log(100)
     else:
-        return h * (G ** k) * Apt / V_RBC * 100
+        return np.exp(-h) * (G ** k) * Apt / V_RBC * 100
 
-def IH_powerLaw_strainBased(t, sigma, A, alpha, beta, f1=5.0, log=False):
 
-    sigma_eff = lambda t: sigma * (1.0 - np.exp(-f1 * t))
-    sigma_int, _ = quad(lambda t: sigma_eff(t) ** (alpha / beta), 0, t)
+def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False):
+    """
+        Model #2: Strain-based power law.
+        Sensible limits for the parameters:
+        0 <= A <= 20
+        0.5 <= alpha <= 2.5
+        0.01 <= beta <= 1
+    """
+    alphaBeta = min(alpha / beta, 300)
+    sigma_eff = lambda t: min(computeEffShearStrainBased(t, sigma_exp, f1), 200)
+    sigma_int, _ = quad(lambda t: np.exp(-A/beta) * sigma_eff(t) ** alphaBeta, 0, t_exp)
     if log:
-        return A + beta * np.log(sigma_int) + np.log(100)
+        return min(beta * np.log(sigma_int), 0) + np.log(100)
     else:
-        return A * sigma_int ** beta * 100
+        return min(sigma_int ** beta, 1) * 100
 
 def IH_powerLaw_stressBased(t_exp, sigma_exp, A, alpha, beta, log=False):
-
+    """
+        Model #1: Stress-based power law.
+        Sensible limits for the parameters:
+        0 <= A <= 20
+        0.5 <= alpha <= 2.5
+        0.01 <= beta <= 1
+    """
     if log:
-        return A + alpha * np.log(sigma_exp) + beta * np.log(t_exp) + np.log(100)
+        return -A + alpha * np.log(sigma_exp) + beta * np.log(t_exp) + np.log(100)
     else:
-        return A * (sigma_exp ** alpha) * (t_exp ** beta) * 100  # convert to percentage
+        return np.exp(-A) * (sigma_exp ** alpha) * (t_exp ** beta) * 100  # convert to percentage
 
 
 def get_input_data(fname):
@@ -128,10 +159,10 @@ def get_input_data(fname):
     data = np.array(list(data), dtype=float)
 
     # get data by header
-    t = data[:, header.index('exposure_time')]
+    t_exp = data[:, header.index('exposure_time')]
     sigma_exp = data[:, header.index('shear_stress')]
 
-    return np.array([t, sigma_exp]).T
+    return np.array([t_exp, sigma_exp]).T
 
 def get_IH_model(model_name, mu, f1, f2, V_RBC, log=False):
     """
