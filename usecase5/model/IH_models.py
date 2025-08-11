@@ -122,13 +122,13 @@ def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False)
         Model #2: Strain-based power law.
         Sensible limits for the parameters:
         0 <= A <= 20
-        0.5 <= alpha <= 2.5
+        0.5 <= alpha <= 3
         0.01 <= beta <= 1
     """
     Geff_normalized = lambda t: min(computeEffShearStrainBased(t, 1, f1), 200)
     G_int, _ = quad(lambda t: Geff_normalized(t) ** (alpha / beta), 0, t_exp)
     if log:
-        return min(-A + beta * np.log(G_int), 0) + np.log(100)
+        return min(-A + alpha * np.log(sigma_exp) + beta * np.log(G_int), 0) + np.log(100)
     else:
         return min(np.exp(-A) * sigma_exp**alpha * G_int ** beta, 1) * 100
 
