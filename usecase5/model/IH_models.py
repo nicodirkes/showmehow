@@ -107,11 +107,10 @@ def IH_poreFormation(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, f2=4.
 
     # Compute integral of pore area formation
     # int_fun = lambda t: computePoreArea(computeAreaStrain(computeLambda(t, G, f1, f2)))
-    int_fun = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G, f1))
-    Apt, _ = quad(int_fun, 0, t_exp)
+    Ap = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G, f1))
+    Apt, _ = quad(Ap, 0, t_exp)
 
     if log:
-        # avoid log(0) by adding a small constant
         Apt = max(Apt, 1e-10)  # ensure Apt is not zero for log calculation
         return -h - np.log(V_RBC) + k * np.log(G) + np.log(Apt) + np.log(100)
     else:
@@ -126,13 +125,12 @@ def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False)
         0.5 <= alpha <= 2.5
         0.01 <= beta <= 1
     """
-    alphaBeta = min(alpha / beta, 300)
-    sigma_eff = lambda t: min(computeEffShearStrainBased(t, sigma_exp, f1), 200)
-    sigma_int, _ = quad(lambda t: np.exp(-A/beta) * sigma_eff(t) ** alphaBeta, 0, t_exp)
+    Geff_normalized = lambda t: min(computeEffShearStrainBased(t, 1, f1), 200)
+    G_int, _ = quad(lambda t: Geff_normalized(t) ** (alpha / beta), 0, t_exp)
     if log:
-        return min(beta * np.log(sigma_int), 0) + np.log(100)
+        return min(-A + beta * np.log(G_int), 0) + np.log(100)
     else:
-        return min(sigma_int ** beta, 1) * 100
+        return min(np.exp(-A) * sigma_exp**alpha * G_int ** beta, 1) * 100
 
 def IH_powerLaw_stressBased(t_exp, sigma_exp, A, alpha, beta, log=False):
     """
