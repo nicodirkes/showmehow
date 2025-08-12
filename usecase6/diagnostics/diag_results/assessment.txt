@@ -1,0 +1,12 @@
+
+MCMC Convergence Assessment
+==========================
+Overall Assessment: GOOD
+Max R-hat: 1.0157
+Min Bulk ESS: 2898
+Min Tail ESS: 6896
+
+Target values:
+- R-hat < 1.01 (excellent) or < 1.1 (good)
+- ESS > 400 (excellent) or > 100 (acceptable)
+        

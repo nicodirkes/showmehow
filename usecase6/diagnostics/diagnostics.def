@@ -1,0 +1,11 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest  
+
+%files
+environment.yml /opt/diagnostics/environment.yml
+
+%post
+conda env update -n base --file /opt/diagnostics/environment.yml
+
+# Add script for auto conda activate
+echo ". /opt/conda/bin/activate base" >> ${APPTAINER_ENVIRONMENT}
