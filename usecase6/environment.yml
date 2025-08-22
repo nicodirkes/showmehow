@@ -4,5 +4,5 @@ channels:
   - conda-forge
 dependencies:
   - curl
-  - nextflow=24.10.6
+  - nextflow=25.04.6
 

@@ -10,6 +10,4 @@ dependencies:
   - seaborn
   - pip
   - pip:
-      - tqdm
-      - emcee
       - arviz

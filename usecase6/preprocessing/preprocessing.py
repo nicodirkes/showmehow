@@ -1,17 +1,56 @@
-import pandas as pd
+script_description = '''
+Script for preprocessing tabular data from experiments
+Author: MK, AC
+Inputs: Tabular data with three columns (shear_stress, exposure_time, fHb)
+Output: Tabular data with: 
+            - multiple fHb measurements grouped by shear_stress and exposure_time
+            - additionally computed columns for mean and standard deviation of fHb measurements
+'''
 
-# Load your data
-df = pd.read_csv('data.csv') 
-# Group and assign a count to each row within each group
-df['Output_number'] = df.groupby(['shear_stress', 'exposure_time']).cumcount() + 1
-# Pivot the table to get outputs in columns
-wide_df = df.pivot(index=['shear_stress', 'exposure_time'], columns='Output_number', values='fHb')
-# Rename columns to Output1, Output2, Output3, etc.
-wide_df.columns = [f'Output{i}' for i in wide_df.columns]
-# Reset index to make alpha and beta regular columns
-wide_df = wide_df.reset_index()
-# Add mean and standard deviation
-wide_df['Mean'] = wide_df[['Output1', 'Output2', 'Output3']].mean(axis=1)
-wide_df['SD'] = wide_df[['Output1', 'Output2', 'Output3']].std(axis=1)
-import numpy as np
-df_mod = pd.read_csv("reshaped_data.csv")
+import pandas as pd
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description=script_description)
+parser.add_argument("--indir")
+parser.add_argument("--outdir")
+parser.add_argument("--prefix")
+parser.add_argument("species")
+
+args = parser.parse_args()
+input_directory = str(args.indir or ".")
+output_directory = str(args.outdir or ".")
+prefix = str(args.prefix or '')
+species = args.species
+input_filename = os.path.join(f"{input_directory}",f"{prefix + species}.csv")
+output_filename = os.path.join(f"{output_directory}",f"{prefix + species}_processed.csv")
+required_columns = ['shear_stress', 'exposure_time', 'fHb']
+
+print(f"Processing {input_filename}")
+
+## Step 1: Read Data
+df = pd.read_csv(
+    input_filename,
+    usecols = required_columns
+    )
+
+## Step 2: Group repeated measurements for fHb
+df['fHb_measurement'] = df.groupby(['shear_stress', 'exposure_time']).cumcount() + 1
+maximum_measurements = max(df['fHb_measurement'])
+df = df.pivot(index=['shear_stress', 'exposure_time'], columns='fHb_measurement', values='fHb')
+
+measurements = [f'fHb_measurement_{i+1}' for i in range(maximum_measurements)]
+df.columns = measurements
+df = df.reset_index()
+
+## Step 3: Compute mean and standard deviation for each data point(row)
+df['fHb_mean'] = df[measurements].mean(axis=1)
+df['fHb_std'] = df[measurements].std(axis=1)
+
+
+## Step 4: Write preprocessed data
+if not os.path.isdir(output_directory):
+    os.mkdir(output_directory)
+df.to_csv(output_filename)
+
+print(f"Finished {output_filename}")
