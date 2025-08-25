@@ -45,8 +45,7 @@ df = df.reset_index()
 
 ## Step 3: Compute mean and standard deviation for each data point(row)
 df['fHb_mean'] = df[measurements].mean(axis=1)
-df['fHb_std'] = df[measurements].std(axis=1)
-
+df['fHb_std'] = df['fHb_mean']  * 0.1 #TODO Move parameter
 
 ## Step 4: Write preprocessed data
 if not os.path.isdir(output_directory):

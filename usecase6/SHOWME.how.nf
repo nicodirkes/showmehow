@@ -1,6 +1,9 @@
 #!/usr/bin/env nextflow
 
 workflow {
+    def species = "human"
+    def noise_model = "homo"
+
     PULL_DATA_COSCINE (
         token_file = file("$moduleDir/pull_data/.token.txt"),
         project_name = "showmehow_usecase5",
@@ -10,7 +13,7 @@ workflow {
     PREPROCESS_DATA(
         script = file("$moduleDir/preprocessing/preprocessing.py"),
         prefix = "data_ding_",
-        species = "human",
+        species = species,
         indir = PULL_DATA_COSCINE.out
     )
 
@@ -30,7 +33,7 @@ workflow {
     CALIBRATION( 
         script = file("$moduleDir/mcmc/calibrate_emcee.py"),
         model_name = "IH_powerLaw_stressBased",
-        noise_model = "homo",
+        noise_model = noise_model,
         data = PREPROCESS_DATA.out.data,
         UQ_STATUS.out.comm
     )
@@ -38,7 +41,9 @@ workflow {
     DIAGNOSTICS(
       script = file("$moduleDir/diagnostics/run_diagnostics.py"),
       mcmc_results = CALIBRATION.out.mcmc_results,
-      outdir = "diagnostics_assesment"
+      outdir = "diagnostics_assesment",
+      species = species,
+      noise_model = noise_model
     )
 
 }
@@ -110,7 +115,7 @@ process UQ_STATUS {
 
 process SERVE_MODEL {
     conda "$moduleDir/model/environment.yml"
-    // cache 'lenient'
+    cache 'lenient'
 
     input:
     path script
@@ -129,7 +134,7 @@ process SERVE_MODEL {
     python ${script} --name ${name} --data ${data} --port ${port} & 
     
     PID=\$!
-    echo \$PID
+    echo "Model Server PID: \$PID"
     # Wait for the model server to start
     while ! nc -z localhost ${port}; do
         sleep 1
@@ -144,13 +149,15 @@ process SERVE_MODEL {
 
     # Stop the model server when the signal is received
     kill \$PID
+
+    rm ${status_comm}
     
     """
 }
 
 process CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
-    // cache 'lenient'
+    cache 'lenient'
     publishDir "$moduleDir/outputs", mode: 'copy'
     
     input:
@@ -184,15 +191,18 @@ process DIAGNOSTICS {
     path script
     path mcmc_results
     val outdir
+    val species
+    val noise_model
+
 
     script:
     """
     #!/bin/bash
-    python3 ${script} --mcmc_results ${mcmc_results} --outdir ${outdir}
+    python3 ${script} --mcmc_results ${mcmc_results} --outdir "${outdir}_${species}" --species ${species} --noise_model ${noise_model}
     """
 
     output:
-    path "${outdir}"
+    path "${outdir}_${species}"
 
 
 }

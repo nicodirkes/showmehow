@@ -192,9 +192,9 @@ if __name__ == "__main__":
         print(f"MCMC completed. Trace shape: {trace.shape}")
         
         # Save results
-        np.savez("calibration_output.npz", 
+        np.savez(f"calibration_output_{args.model_name}_{args.data}.npz", 
                  trace=trace, samples=samples, lnprob=lnprob)
-        print("Results saved to calibration_output.npz")
+        print(f"Results saved to calibration_output_{args.model_name}_{args.data}.npz")
         
     except Exception as e:
         print(f"Error during MCMC: {e}")
