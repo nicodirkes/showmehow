@@ -60,25 +60,33 @@ def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
         integral += 0.0  # pore area is zero in this range
     # Part 2: from t1 to t2 (if applicable)
     if t2 > t1:
+        for i in range(6):  # iterate over polynomial terms
+            integral += p[i] * G**i * integrate_normalized_Geff(f, i, t1, t2)
 
-        int_polynomial = 0.0
-        for i in range(0,6): # iterate over polynomial terms
-            term = 0.0
-            for k in range(1, i+1):
-                binom = np.math.comb(i, k)
-                term += binom*(-1)**(k+1) / k * (np.exp(-k*f*t2) - np.exp(-k*f*t1))
-            int_polynomial += p[i] * G**i * (term/f + t2 - t1)
-
-        integral += int_polynomial
-            
     # Part 3: from t2 to t_exp (if applicable)
     if t_exp > t2:
         integral += 6.1932 * (t_exp - t2)
 
     return integral
 
+def integrate_normalized_Geff(f, i, t0, t1):
+    """
+    Helper function to integrate (1 - exp(-f*t))^i from t0 to t1.
+    """
+    # if i is an integer, we can use the binomial expansion
+    if isinstance(i, int):
+        integral = 0.0
+        for k in range(1, i+1):
+            binom = np.math.comb(i, k)
+            integral += binom * (-1)**(k+1) / k * (np.exp(-k*f*t1) - np.exp(-k*f*t0))
+        integral = integral / f + (t1 - t0)
+    else:
+        from scipy.special import hyp2f1 # use hypergeometric function for non-integer i
+        antiderivative = lambda t: (1 - np.exp(-f*t))**(i+1) * hyp2f1(1, i+1, i+2, 1 - np.exp(-f*t)) / (f * (i+1))
+        integral = antiderivative(t1) - antiderivative(t0)
+    return integral
 
-def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False):
+def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False, analytical=True):
     """
         Model #2: Strain-based power law.
         Sensible limits for the parameters:
@@ -86,8 +94,12 @@ def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False)
         0.5 <= alpha <= 3
         0.01 <= beta <= 1
     """
-    Geff_normalized = lambda t: computeEffShearStrainBased(t, 1, f1)
-    G_int, _ = quad(lambda t: Geff_normalized(t) ** (alpha / beta), 0, t_exp)
+    if analytical:
+        G_int = integrate_normalized_Geff(f1, alpha/beta, 0, t_exp)
+    else:
+        Geff_normalized = lambda t: computeEffShearStrainBased(t, 1, f1)
+        G_int, _ = quad(lambda t: Geff_normalized(t) ** (alpha / beta), 0, t_exp)
+
     if log:
         return -A + alpha * np.log(sigma_exp) + beta * np.log(G_int) + np.log(100)
     else:
