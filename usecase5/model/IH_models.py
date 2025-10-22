@@ -5,8 +5,8 @@ import csv
 # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
 p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
 
-def computeEffShearStrainBased(t, G, f1):
-    return G * (1 - np.exp(-f1 * t))
+def computeEffShearStrainBased(t, f1):
+    return 1 - np.exp(-f1 * t)
 
 def computePoreAreaInterpolated(G):
     if G < 3740:
@@ -29,7 +29,7 @@ def IH_poreFormation_strainBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f
     if analytical:
         Apt = integral_poreFormation_analytical(t_exp, G_exp, f1)
     else:
-        Ap = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G_exp, f1))
+        Ap = lambda t: computePoreAreaInterpolated(G_exp * computeEffShearStrainBased(t, f1))
         Apt, _ = quad(Ap, 0, t_exp)
 
     if log:
@@ -97,7 +97,7 @@ def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False,
     if analytical:
         G_int = integrate_normalized_Geff(f1, alpha/beta, 0, t_exp)
     else:
-        Geff_normalized = lambda t: computeEffShearStrainBased(t, 1, f1)
+        Geff_normalized = lambda t: computeEffShearStrainBased(t, f1)
         G_int, _ = quad(lambda t: Geff_normalized(t) ** (alpha / beta), 0, t_exp)
 
     if log:
