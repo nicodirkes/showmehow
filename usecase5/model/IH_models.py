@@ -2,6 +2,9 @@ import numpy as np
 from scipy.integrate import quad
 import csv
 
+# Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+
 def computeEffShearStrainBased(t, G, f1):
     return G * (1 - np.exp(-f1 * t))
 
@@ -11,28 +14,68 @@ def computePoreAreaInterpolated(G):
     elif G > 42000:
         return 6.1932
     else:
-        # Coefficients of interpolation polynomial
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
         return p[0] + p[1]*G + p[2]*G**2 + p[3]*G**3 + p[4]*G**4 + p[5]*G**5
 
-def IH_poreFormation(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, V_RBC=147.494):
+def IH_poreFormation_strainBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, V_RBC=147.494, analytical=True):
     """
     Model #3: Compute IH with pore formation model based on strain-based morphology.
     Sensible limits:
     0 <= h <= 20
     0 <= k <= 2
     """
-    G = sigma_exp / mu  # shear rate
+    G_exp = sigma_exp / mu  # shear rate
 
     # Compute integral of pore area formation
-    Ap = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G, f1))
-    Apt, _ = quad(Ap, 0, t_exp)
+    if analytical:
+        Apt = integral_poreFormation_analytical(t_exp, G_exp, f1)
+    else:
+        Ap = lambda t: computePoreAreaInterpolated(computeEffShearStrainBased(t, G_exp, f1))
+        Apt, _ = quad(Ap, 0, t_exp)
 
     if log:
         Apt = max(Apt, 1e-10)  # ensure Apt is not zero for log calculation
-        return -h - np.log(V_RBC) + k * np.log(G) + np.log(Apt) + np.log(100)
+        return -h - np.log(V_RBC) + k * np.log(G_exp) + np.log(Apt) + np.log(100)
     else:
-        return np.exp(-h) * (G ** k) * Apt / V_RBC * 100
+        return np.exp(-h) * (G_exp ** k) * Apt / V_RBC * 100
+
+def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
+    """
+    Model #3: Compute IH with pore formation model based on strain-based morphology.
+    Use analytical integration formula.
+    """
+    G = G_exp  # shear rate
+
+    # Analytical integral of pore area formation
+    
+    # First: find transition time points where G_eff crosses interpolation limits
+    t1 = -np.log(1 - 3740 / G) / f if G > 3740 else 0.0
+    t1 = min(t1, t_exp)
+    t2 = -np.log(1 - 42000 / G) / f if G > 42000 else t_exp
+    t2 = min(t2, t_exp)
+
+    # Integrate in three parts
+    integral = 0.0
+    # Part 1: from 0 to t1 (if applicable)
+    if t1 > 0:
+        integral += 0.0  # pore area is zero in this range
+    # Part 2: from t1 to t2 (if applicable)
+    if t2 > t1:
+
+        int_polynomial = 0.0
+        for i in range(0,6): # iterate over polynomial terms
+            term = 0.0
+            for k in range(1, i+1):
+                binom = np.math.comb(i, k)
+                term += binom*(-1)**(k+1) / k * (np.exp(-k*f*t2) - np.exp(-k*f*t1))
+            int_polynomial += p[i] * G**i * (term/f + t2 - t1)
+
+        integral += int_polynomial
+            
+    # Part 3: from t2 to t_exp (if applicable)
+    if t_exp > t2:
+        integral += 6.1932 * (t_exp - t2)
+
+    return integral
 
 
 def IH_powerLaw_strainBased(t_exp, sigma_exp, A, alpha, beta, f1=5.0, log=False):
