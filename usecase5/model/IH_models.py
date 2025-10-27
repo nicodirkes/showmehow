@@ -65,16 +65,14 @@ def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
     # Analytical integral of pore area formation
     
     # First: find transition time points where G_eff crosses interpolation limits
-    t1 = -np.log(1 - 3740 / G) / f if G > 3740 else 0.0
+    t1 = -np.log(1 - 3740 / G) / f if G > 3740 else t_exp
     t1 = min(t1, t_exp)
     t2 = -np.log(1 - 42000 / G) / f if G > 42000 else t_exp
     t2 = min(t2, t_exp)
 
     # Integrate in three parts
-    integral = 0.0
-    # Part 1: from 0 to t1 (if applicable)
-    if t1 > 0:
-        integral += 0.0  # pore area is zero in this range
+    # Part 1: from 0 to t1
+    integral = 0.0  # pore area is zero in this range
     # Part 2: from t1 to t2 (if applicable)
     if t2 > t1:
         for i in range(6):  # iterate over polynomial terms
