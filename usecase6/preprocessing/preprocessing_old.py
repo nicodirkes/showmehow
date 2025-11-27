@@ -34,11 +34,22 @@ df = pd.read_csv(
     usecols = required_columns
     )
 
-## Step 2: Any Preprocessing goes here
+## Step 2: Group repeated measurements for fHb
+df['fHb_measurement'] = df.groupby(['shear_stress', 'exposure_time']).cumcount() + 1
+maximum_measurements = max(df['fHb_measurement'])
+df = df.pivot(index=['shear_stress', 'exposure_time'], columns='fHb_measurement', values='fHb')
 
-## Step 3: Write preprocessed data
+measurements = [f'fHb_measurement_{i+1}' for i in range(maximum_measurements)]
+df.columns = measurements
+df = df.reset_index()
+
+## Step 3: Compute mean and standard deviation for each data point(row)
+df['fHb_mean'] = df[measurements].mean(axis=1)
+df['fHb_std'] = df['fHb_mean']  * 0.1 #TODO Move parameter
+
+## Step 4: Write preprocessed data
 if not os.path.isdir(output_directory):
     os.mkdir(output_directory)
-df.to_csv(output_filename, index=False)
+df.to_csv(output_filename)
 
 print(f"Finished {output_filename}")
