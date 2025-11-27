@@ -54,7 +54,7 @@ workflow {
 
     // DIAGNOSTICS(
     //   script = file("$moduleDir/diagnostics/run_diagnostics.py"),
-    //   mcmc_results = CALIBRATION.out.mcmc_results,
+    //   mcmc_results = CALIBRATION.out.mcmc_chain,
     //   outdir = "diagnostics_assesment",
     //   species = species,
     //   config = params,
@@ -239,7 +239,8 @@ process CALIBRATION {
     """
 
     output:
-    path "*.npz", emit: mcmc_results
+    path "*.npz", emit: mcmc_chain
+    path "*.png", emit: mcmc_corner_plot
 
 }
 
