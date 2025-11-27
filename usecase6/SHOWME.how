@@ -8,7 +8,6 @@ workflow {
     def umbridge_port = params.umbridge_port
 
 
-
     PULL_DATA_COSCINE (
         token_file = file("$moduleDir/pull_data/.token.txt"),
         project_name = "showmehow_usecase5",
@@ -230,10 +229,8 @@ process CALIBRATION {
     def parameters = new YamlBuilder()
     parameters(config)
     """
-
     echo "${parameters.toString()}" > _params.yml
     
-
     cat ${status_comm} # blocked until the model server is up
 
     python ${script}  --config _params.yml --data ${data} --port ${port}
