@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import arviz as az
 import seaborn as sns
+import yaml
 from pathlib import Path
 
 def setup_output_directory(path="diagnostics_assesment"):
@@ -67,33 +68,33 @@ def run_arviz_diagnostics(inference_data, output_dir):
     print(f"\nDiagnostics saved to {output_dir / 'convergence_diagnostics.csv'}")
     return rhat, ess_bulk, ess_tail, mcse
 
-def create_arviz_plots(inference_data, noise_model, species, output_dir):
+def create_arviz_plots(inference_data, species, output_dir):
     print("\nCreating ArviZ diagnostic plots...")
     sns.set_theme(style="darkgrid", palette="deep")
     az.style.use("arviz-darkgrid")
     print("- Creating trace plots...")
     az.plot_trace(inference_data, figsize=(12, 8))
-    plt.suptitle(f"{species}: {noise_model} - MCMC Trace Plots", fontsize=14)
+    plt.suptitle(f"{species}: - MCMC Trace Plots", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_dir / "trace_plots.png", dpi=150, bbox_inches='tight')
     print("- Creating posterior plots...")
     az.plot_posterior(inference_data, figsize=(12, 4), hdi_prob=0.94)
-    plt.suptitle(f"{species}: {noise_model} - Posterior Distributions", fontsize=14)
+    plt.suptitle(f"{species}: - Posterior Distributions", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_dir / "posterior_distributions.png", dpi=150, bbox_inches='tight')
     print("- Creating pair plot...")
     az.plot_pair(inference_data, kind="scatter", marginals=True, figsize=(10, 10))
-    plt.suptitle(f"{species}: {noise_model} - Parameter Correlations", fontsize=14)
+    plt.suptitle(f"{species}: - Parameter Correlations", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_dir / "parameter_correlations.png", dpi=150, bbox_inches='tight')
     print("- Creating autocorrelation plots...")
     az.plot_autocorr(inference_data, figsize=(12, 4))
-    plt.suptitle(f"{species}: {noise_model} - Autocorrelation Functions", fontsize=14)
+    plt.suptitle(f"{species}: - Autocorrelation Functions", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_dir / "autocorrelation.png", dpi=150, bbox_inches='tight')
     print("- Creating rank plots...")
     az.plot_rank(inference_data, figsize=(12, 4))
-    plt.suptitle(f"{species}: {noise_model} - Rank Plots", fontsize=14)
+    plt.suptitle(f"{species}: - Rank Plots", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_dir / "rank_plots.png", dpi=150, bbox_inches='tight')
     try:
@@ -177,18 +178,24 @@ def main():
     parser = argparse.ArgumentParser(description='MCMC Diagnostics')
     parser.add_argument('--mcmc_results', help='.npz file with mcmc_results')
     parser.add_argument('--outdir', help='ouput_directory for diagnostics assesment')
-    parser.add_argument('--noise_model')
     parser.add_argument('--species')
+    parser.add_argument('--config')
     args = parser.parse_args()
 
-    param_names = ["theta_0", "theta_1", "theta_2"]
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+    
+    param_names = config["calibration"]["parameters"]
+    if config["calibration"]["calibrate_noise"]==True:
+        param_names += config["calibration"]["noise_parameters"]
+
 
     try:
         output_dir = setup_output_directory(args.outdir)
         trace, samples, lnprob = load_mcmc_results(args.mcmc_results)
         inference_data = create_inference_data(samples, lnprob, param_names)
         rhat, ess_bulk, ess_tail, mcse = run_arviz_diagnostics(inference_data, output_dir)
-        create_arviz_plots(inference_data, args.noise_model, args.species, output_dir)
+        create_arviz_plots(inference_data, args.species, output_dir)
         create_summary_table(inference_data, trace, param_names, output_dir)
         save_samples(trace, param_names, output_dir)
         assessment = assess_convergence(rhat, ess_bulk, ess_tail)
