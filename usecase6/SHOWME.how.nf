@@ -1,8 +1,13 @@
 #!/usr/bin/env nextflow
+import groovy.yaml.YamlBuilder
+
 
 workflow {
-    def species = "human"
-    def noise_model = "homo"
+    def species = params.species
+    def model = params.model.name
+    def umbridge_port = params.umbridge_port
+
+
 
     PULL_DATA_COSCINE (
         token_file = file("$moduleDir/pull_data/.token.txt"),
@@ -24,27 +29,37 @@ workflow {
     SERVE_MODEL(
         script = file("$moduleDir/model/IH_model_server.py"),
         src = file("$moduleDir/model/src"),
-        name = "IH_powerLaw_stressBased",
+        name = model,
         data = PREPROCESS_DATA.out.data, 
-        port = 4242,
+        port = umbridge_port,
         UQ_STATUS.out.comm
     )
+
+    // SERVE_MODEL_JL(
+    //     script = file("$moduleDir/model_julia/IH_model_server.jl"),
+    //     src = file("$moduleDir/model_julia/src"),
+    //     name = "IH_powerLaw_stressBased",
+    //     data = PREPROCESS_DATA.out.data, 
+    //     port = umbridge_port,
+    //     UQ_STATUS.out.comm
+    // )
+
 
     CALIBRATION( 
         script = file("$moduleDir/mcmc/calibrate_emcee.py"),
-        model_name = "IH_powerLaw_stressBased",
-        noise_model = noise_model,
+        config = params,
         data = PREPROCESS_DATA.out.data,
+        port = umbridge_port,
         UQ_STATUS.out.comm
     )
 
-    DIAGNOSTICS(
-      script = file("$moduleDir/diagnostics/run_diagnostics.py"),
-      mcmc_results = CALIBRATION.out.mcmc_results,
-      outdir = "diagnostics_assesment",
-      species = species,
-      noise_model = noise_model
-    )
+    // DIAGNOSTICS(
+    //   script = file("$moduleDir/diagnostics/run_diagnostics.py"),
+    //   mcmc_results = CALIBRATION.out.mcmc_results,
+    //   outdir = "diagnostics_assesment",
+    //   species = species,
+    //   config = params,
+    // )
 
 }
 
@@ -155,28 +170,76 @@ process SERVE_MODEL {
     """
 }
 
+// process SERVE_MODEL_JL {
+//     container "file://$moduleDir/model_julia/container.sif"
+//     cache 'lenient'
+
+//     input:
+//     path script
+//     path src
+//     val name
+//     path data
+//     val port
+//     path status_comm
+
+//     script:
+//     """
+//     #!/bin/bash
+
+
+//     # Start the model server in the background
+//     julia ${script} --name ${name} --data ${data} --port ${port} & 
+    
+//     PID=\$!
+//     echo "Model Server PID: \$PID"
+//     # Wait for the model server to start
+//     while ! curl http://localhost:${port}/Info -X GET ; do
+//         sleep 1
+//     done
+//     echo "model_server_up" > ${status_comm}
+//     echo "Model server is up and running on port ${port}"
+
+//     # Monitor the status 
+//     cat ${status_comm}  &
+//     STATUS_PID=\$!
+//     wait \$STATUS_PID
+
+//     # Stop the model server when the signal is received
+//     kill \$PID
+
+//     rm ${status_comm}
+    
+//     """
+// }
+
 process CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
     publishDir "$moduleDir/outputs", mode: 'copy'
+
     
     input:
     path script
-    val model_name
-    val noise_model
+    val config
     path data
+    val port
     path status_comm
 
 
     script:
-      """
-      
-      cat ${status_comm} # blocked until the model server is up
+    def parameters = new YamlBuilder()
+    parameters(config)
+    """
 
-      python ${script}  --model_name ${model_name} --data ${data} --noise_model ${noise_model}
-      
-      echo "mcmc_done" > ${status_comm} # signal to stop the model server
-      """
+    echo "${parameters.toString()}" > _params.yml
+    
+
+    cat ${status_comm} # blocked until the model server is up
+
+    python ${script}  --config _params.yml --data ${data} --port ${port}
+    
+    echo "mcmc_done" > ${status_comm} # signal to stop the model server
+    """
 
     output:
     path "*.npz", emit: mcmc_results
@@ -192,17 +255,20 @@ process DIAGNOSTICS {
     path mcmc_results
     val outdir
     val species
-    val noise_model
+    val config
 
 
     script:
+    def parameters = new YamlBuilder()
+    parameters(config)
     """
     #!/bin/bash
-    python3 ${script} --mcmc_results ${mcmc_results} --outdir "${outdir}_${species}" --species ${species} --noise_model ${noise_model}
+    echo "${parameters.toString()}" > _params.yml
+    python3 ${script} --mcmc_results ${mcmc_results} --outdir "${outdir}_${mcmc_results.simpleName}" --species ${species} --config _params.yml
     """
 
     output:
-    path "${outdir}_${species}"
+    path "${outdir}_${mcmc_results.simpleName}"
 
 
 }
