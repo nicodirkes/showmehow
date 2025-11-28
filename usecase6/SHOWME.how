@@ -60,6 +60,12 @@ workflow {
     //   config = params,
     // )
 
+    BUNDLE_OUPUTS(
+        experiment_params = params,
+        mcmc_chain = CALIBRATION.out.mcmc_chain,
+        mcmc_corner_plot = CALIBRATION.out.mcmc_corner_plot,
+    )
+
 }
 
 process PULL_DATA_COSCINE {
@@ -96,7 +102,6 @@ process PULL_DATA_COSCINE {
 
 process PREPROCESS_DATA{
     conda "$moduleDir/preprocessing/environment.yml"
-    publishDir "$moduleDir/outputs", mode: 'copy'
 
     input:
         file script
@@ -214,7 +219,6 @@ process SERVE_MODEL {
 process CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
-    publishDir "$moduleDir/outputs", mode: 'copy'
 
     
     input:
@@ -239,8 +243,8 @@ process CALIBRATION {
     """
 
     output:
-    path "*.npz", emit: mcmc_chain
-    path "*.png", emit: mcmc_corner_plot
+    path "calibration_output*.npz", emit: mcmc_chain
+    path "corner_plot*.png", emit: mcmc_corner_plot
 
 }
 
@@ -269,4 +273,30 @@ process DIAGNOSTICS {
     path "${outdir}_${mcmc_results.simpleName}"
 
 
+}
+
+process BUNDLE_OUPUTS {
+    publishDir "$moduleDir/outputs", mode: 'copy'
+
+    input:
+    val experiment_params
+    path mcmc_chain
+    path mcmc_corner_plot
+
+    script:
+    def parameters = new YamlBuilder()
+    parameters(experiment_params)
+    """
+    #!/bin/bash
+    echo "${parameters.toString()}" > _params.yml
+
+    mkdir "${params.species}_${params.model.name}_${workflow.sessionId}"
+    
+    cp _params.yml "${params.species}_${params.model.name}_${workflow.sessionId}"
+    cp ${mcmc_chain} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    cp ${mcmc_corner_plot} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    """
+
+    output:
+    path "${params.species}_${params.model.name}_${workflow.sessionId}"
 }
