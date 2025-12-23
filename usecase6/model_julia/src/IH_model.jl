@@ -442,10 +442,12 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
         """
         # if i is an integer, we can use the binomial expansion
         integral = 0.0
-            for k in range(1, i+1)
+        if isa(i, Integer) && i >= 1
+            for k in 1:i
                 binom = binomial(i, k)
                 integral += binom * (-1)^(k+1) / k * (exp(-k*f*t1) - exp(-k*f*t0))
             end
+        end
         integral = integral / f + (t1 - t0)
         return integral
     end 
@@ -474,12 +476,13 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
         integral = 0.0  # pore area is zero in this range
         # Part 2: from t1 to t2 (if applicable)
         if t2 > t1
-            for i in range(0, 5)  # iterate over polynomial terms
+            for i in 0:5  # iterate over polynomial terms
                 integral += p[i+1] * G^i * integrate_normalized_Geff(f, i, t1, t2)
             end
+        end
 
         # Part 3: from t2 to t_exp (if applicable)
-        elseif t_exp > t2
+        if t_exp > t2
             integral += 6.1932 * (t_exp - t2)
         end
         return integral
@@ -535,12 +538,13 @@ function IH_poreFormation_strainBased_analytical_hypergeometric(t_exp, sigma_exp
         integral = 0.0  # pore area is zero in this range
         # Part 2: from t1 to t2 (if applicable)
         if t2 > t1
-            for i in range(0, 5)  # iterate over polynomial terms
+            for i in 0:5  # iterate over polynomial terms
                 integral += p[i+1] * G^i * integrate_normalized_Geff(f, i, t1, t2)
             end
+        end
 
         # Part 3: from t2 to t_exp (if applicable)
-        elseif t_exp > t2
+        if t_exp > t2
             integral += 6.1932 * (t_exp - t2)
         end
         return integral
