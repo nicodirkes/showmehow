@@ -1,5 +1,3 @@
-using Pkg
-Pkg.activate(".")
 import DifferentialEquations as DE
 using QuadGK
 using DataFrames, CSV
