@@ -5,8 +5,6 @@ species: human
 # ovine
 # porcine
 
-umbridge_port: 49152
-
 model: 
   name: IH_powerLaw_stressBased
   control_variables: ["shear_stress", "exposure_time"]

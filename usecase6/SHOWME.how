@@ -5,7 +5,6 @@ import groovy.yaml.YamlBuilder
 workflow {
     def species = params.species
     def model = params.model.name
-    def umbridge_port = params.umbridge_port
 
 
     PULL_DATA_COSCINE (
@@ -48,7 +47,6 @@ workflow {
         script = file("$moduleDir/mcmc/calibrate_emcee.py"),
         config = params,
         data = PREPROCESS_DATA.out.data,
-        port = umbridge_port,
         UQ_STATUS.out.comm
     )
 
@@ -141,25 +139,61 @@ process SERVE_MODEL {
     path src
     val name
     path data
-    val port
     path status_comm
 
     script:
     """
     #!/bin/bash
 
+    CHOSEN_PORT=""
+    MAX_ATTEMPTS=20
 
-    # Start the model server in the background
-    python ${script} --name ${name} --data ${data} --port ${port} & 
-    
-    PID=\$!
-    echo "Model Server PID: \$PID"
-    # Wait for the model server to start
-    while ! bash -c "echo > /dev/tcp/localhost/${port}" 2>/dev/null; do
-        sleep 1
+    random_start_port() {
+        echo \$(( (RANDOM % 16384) + 49152 ))
+    }
+
+    ATTEMPT_PORT=\$(random_start_port)
+
+    try_port() {
+        local candidate_port=\$1
+        python ${script} --name ${name} --data ${data} --port \$candidate_port &
+        SERVER_PID=\$!
+        echo "Model Server PID: \$SERVER_PID (trying port \$candidate_port)"
+
+        # poll for 30 seconds if model is up
+        for _ in \$(seq 1 30); do
+            if bash -c "echo > /dev/tcp/localhost/\$candidate_port" 2>/dev/null; then
+                CHOSEN_PORT=\$candidate_port
+                return 0
+            fi
+            if ! kill -0 \$SERVER_PID 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+
+        kill \$SERVER_PID 2>/dev/null || true
+        wait \$SERVER_PID 2>/dev/null || true
+        return 1
+    }
+
+    ATTEMPT=1
+    while [ \$ATTEMPT -le \$MAX_ATTEMPTS ]; do
+        if try_port \$ATTEMPT_PORT; then
+            break
+        fi
+        ATTEMPT=\$((ATTEMPT + 1))
+        ATTEMPT_PORT=\$((ATTEMPT_PORT + 1 + (RANDOM % 100)))
     done
-    echo "model_server_up" > ${status_comm}
-    echo "Model server is up and running on port ${port}"
+
+    if [ -z "\$CHOSEN_PORT" ]; then
+        echo "Failed to start model server after \${MAX_ATTEMPTS} attempts" >&2
+        exit 1
+    fi
+
+    echo "\$CHOSEN_PORT" > ${status_comm}
+    echo "Model server is up and running on port \${CHOSEN_PORT}"
+
 
     # Monitor the status 
     cat ${status_comm}  &
@@ -167,7 +201,7 @@ process SERVE_MODEL {
     wait \$STATUS_PID
 
     # Stop the model server when the signal is received
-    kill \$PID
+    kill \$SERVER_PID
 
     rm ${status_comm}
     
@@ -175,8 +209,8 @@ process SERVE_MODEL {
 }
 
 process SERVE_MODEL_JL {
-    // container "bpc_hemolyis/model_julia" 
-    container "file://$moduleDir/model_julia/container.sif"
+    container "bpc_hemolyis/model_julia" 
+    // container "file://$moduleDir/model_julia/container.sif"
     cache 'lenient'
 
     input:
@@ -184,24 +218,63 @@ process SERVE_MODEL_JL {
     path src
     val name
     path data
-    val port
     path status_comm
 
     script:
     """
     #!/bin/bash
 
-    # Start the model server in the background
-    julia ${script} --name ${name} --data ${data} --port ${port} & 
-    
-    PID=\$!
-    echo "Model Server PID: \$PID"
-    # Wait for the model server to start
-    while ! bash -c "echo > /dev/tcp/localhost/${port}" 2>/dev/null; do
-        sleep 1
+    CHOSEN_PORT=""
+    MAX_ATTEMPTS=20
+
+    random_start_port() {
+        echo \$(( (RANDOM % 16384) + 49152 ))
+    }
+
+    ATTEMPT_PORT=\$(random_start_port)
+
+    try_port() {
+        local candidate_port=\$1
+        julia ${script} --name ${name} --data ${data} --port \$candidate_port &
+        SERVER_PID=\$!
+        echo "Model Server PID: \$SERVER_PID (trying port \$candidate_port)"
+        
+        # poll for 30 seconds if model is up
+        for _ in \$(seq 1 30); do
+            if bash -c "echo > /dev/tcp/localhost/\$candidate_port" 2>/dev/null; then
+                CHOSEN_PORT=\$candidate_port
+                return 0
+            fi
+            if ! kill -0 \$SERVER_PID 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+
+        kill \$SERVER_PID 2>/dev/null || true
+        wait \$SERVER_PID 2>/dev/null || true
+        return 1
+    }
+
+    ATTEMPT=1
+    while [ \$ATTEMPT -le \$MAX_ATTEMPTS ]; do
+        if try_port \$ATTEMPT_PORT; then
+            break
+        fi
+        ATTEMPT=\$((ATTEMPT + 1))
+        ATTEMPT_PORT=\$((ATTEMPT_PORT + 1 + (RANDOM % 100)))
     done
-    echo "model_server_up" > ${status_comm}
-    echo "Model server is up and running on port ${port}"
+
+    if [ -z "\$CHOSEN_PORT" ]; then
+        echo "Failed to start model server after \${MAX_ATTEMPTS} attempts" >&2
+        exit 1
+    fi
+
+    echo "\$CHOSEN_PORT" > ${status_comm}
+    echo "Model server is up and running on port \${CHOSEN_PORT}"
+
+    # In order to use a single status_comm pipe
+    sleep 5
 
     # Monitor the status 
     cat ${status_comm}  &
@@ -209,7 +282,7 @@ process SERVE_MODEL_JL {
     wait \$STATUS_PID
 
     # Stop the model server when the signal is received
-    kill \$PID
+    kill \$SERVER_PID
 
     rm ${status_comm}
     
@@ -225,7 +298,6 @@ process CALIBRATION {
     path script
     val config
     path data
-    val port
     path status_comm
 
 
@@ -234,10 +306,10 @@ process CALIBRATION {
     parameters(config)
     """
     echo "${parameters.toString()}" > _params.yml
-    
-    cat ${status_comm} # blocked until the model server is up
 
-    python ${script}  --config _params.yml --data ${data} --port ${port}
+    MODEL_PORT=\$(cat ${status_comm})
+    
+    python ${script}  --config _params.yml --data ${data} --port \${MODEL_PORT}
     
     echo "mcmc_done" > ${status_comm} # signal to stop the model server
     """

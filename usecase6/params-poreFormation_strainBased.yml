@@ -5,7 +5,6 @@ species: porcine
 # ovine
 # porcine
 
-umbridge_port: 49152
 
 model: 
   name: IH_poreFormation_strainBased
