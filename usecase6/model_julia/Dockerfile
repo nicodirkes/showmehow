@@ -20,9 +20,4 @@ COPY Project.toml /opt/${ENV_NAME}/Project.toml
 
 
 # Install the Julia packages defined in Project.toml 
-RUN julia -e 'using Pkg; Pkg.instantiate()'
-
-# For any packages that use precompilation, import/using them once
-RUN julia -e 'import DifferentialEquations as DE; using QuadGK, DataFrames, CSV, Statistics, HypergeometricFunctions'
-
-ENTRYPOINT [ "/bin/bash" ]
+RUN julia -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'

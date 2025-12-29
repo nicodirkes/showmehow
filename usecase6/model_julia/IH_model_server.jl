@@ -67,7 +67,7 @@ function parse_arguments()
         "--port"
             help = "Server port"
             arg_type = Int
-            default = 4242
+            default = 49152
     end
     return parse_args(s)
 end
@@ -77,7 +77,7 @@ function main()
 
     name = args["name"]
     data_file = args["data"]
-    port = get(args, "port", 4242)
+    port = get(args, "port", 49152)
 
     println("Starting UMBridge server on port $port")
     println("Data file: $data_file")
@@ -85,6 +85,13 @@ function main()
 
     data = CSV.read(data_file, DataFrame)
 
+    required_columns = ["exposure_time", "shear_stress"]
+    if !all(col in names(data) for col in required_columns)
+        error("Data file must contain columns: $(join(required_columns, ", "))")
+    else 
+        select!(data, required_columns)
+    end
+    
     # Create the model instance
     model = get_IH_model(name, data)
 

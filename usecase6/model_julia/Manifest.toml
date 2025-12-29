@@ -2017,11 +2017,9 @@ version = "1.4.0"
 
 [[deps.UMBridge]]
 deps = ["HTTP", "JSON", "Parameters", "Sockets"]
-git-tree-sha1 = "cebbc9db35fcadaf4428bebda1577df48afbbc91"
-repo-rev = "match_interface"
-repo-url = "https://github.com/thealanjason/UMBridge.jl.git"
+git-tree-sha1 = "fe7969af05a25c34adfb296d79e4f14420599929"
 uuid = "0ac74fe0-b753-4e62-be71-04a8383fbbef"
-version = "1.1.5"
+version = "1.1.7"
 
 [[deps.URIs]]
 git-tree-sha1 = "bef26fb046d031353ef97a82e3fdb6afe7f21b1a"

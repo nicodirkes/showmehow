@@ -1,7 +1,5 @@
 import DifferentialEquations as DE
 using QuadGK
-using DataFrames, CSV
-using Statistics
 using HypergeometricFunctions
 
 

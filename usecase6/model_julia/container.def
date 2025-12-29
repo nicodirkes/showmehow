@@ -27,5 +27,5 @@ export JULIA_HISTORY="/tmp/logs/repl_history.jl"
 echo "export JULIA_HISTORY=\"/tmp/logs/repl_history.jl\"" >> $APPTAINER_ENVIRONMENT
 
 # Install the Julia packages
-julia -e 'using Pkg; Pkg.instantiate()'
+julia -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 
