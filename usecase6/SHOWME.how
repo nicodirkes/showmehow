@@ -5,6 +5,7 @@ import groovy.yaml.YamlBuilder
 workflow {
     def species = params.species
     def model = params.model.name
+    def use_model_jl = params.model.use_julia
 
 
     PULL_DATA_COSCINE (
@@ -24,24 +25,24 @@ workflow {
         PREPROCESS_DATA.out.done
     ) 
     
-    // SERVE_MODEL(
-    //     script = file("$moduleDir/model/IH_model_server.py"),
-    //     src = file("$moduleDir/model/src"),
-    //     name = model,
-    //     data = PREPROCESS_DATA.out.data, 
-    //     port = umbridge_port,
-    //     UQ_STATUS.out.comm
-    // )
-
-    SERVE_MODEL_JL(
-        script = file("$moduleDir/model_julia/IH_model_server.jl"),
-        src = file("$moduleDir/model_julia/src"),
-        name = model,
-        data = PREPROCESS_DATA.out.data, 
-        port = umbridge_port,
-        UQ_STATUS.out.comm
-    )
-
+    if (use_model_jl) {
+            SERVE_MODEL_JL(
+            script = file("$moduleDir/model_julia/IH_model_server.jl"),
+            src = file("$moduleDir/model_julia/src"),
+            name = model,
+            data = PREPROCESS_DATA.out.data, 
+            UQ_STATUS.out.comm
+        )
+    }
+    else {
+        SERVE_MODEL(
+            script = file("$moduleDir/model/IH_model_server.py"),
+            src = file("$moduleDir/model/src"),
+            name = model,
+            data = PREPROCESS_DATA.out.data, 
+            UQ_STATUS.out.comm
+        )
+    }
 
     CALIBRATION( 
         script = file("$moduleDir/mcmc/calibrate_emcee.py"),

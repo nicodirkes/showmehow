@@ -8,6 +8,7 @@ species: human
 model: 
   name: IH_powerLaw_stressBased
   control_variables: ["shear_stress", "exposure_time"]
+  use_julia: true
 
 calibration:
   nwalkers:     50

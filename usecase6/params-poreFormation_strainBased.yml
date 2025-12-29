@@ -9,6 +9,7 @@ species: porcine
 model: 
   name: IH_poreFormation_strainBased
   control_variables: ["shear_stress", "exposure_time"]
+  use_julia: true
 
 calibration:
   nwalkers:     100
