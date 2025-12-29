@@ -77,7 +77,7 @@ def parse_arguments():
                        help='Model name')
     parser.add_argument('--data', type=str, 
                        help='Data file path')
-    parser.add_argument('--port', type=int, default=4242,
+    parser.add_argument('--port', type=int, default=49152,
                        help='Server port')
     return parser.parse_args()
 

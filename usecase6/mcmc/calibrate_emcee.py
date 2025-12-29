@@ -158,7 +158,7 @@ def parse_arguments():
                         help='YAML file for Configuration Parameters')
     parser.add_argument('--data', type=str,
                         help='Path to Data File')
-    parser.add_argument('--port', type=int, default=4242,
+    parser.add_argument('--port', type=int, default=49152,
                        help='Server port')
     return parser.parse_args()
 

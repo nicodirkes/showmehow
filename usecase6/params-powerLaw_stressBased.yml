@@ -5,7 +5,7 @@ species: porcine
 # ovine
 # porcine
 
-umbridge_port: 7246
+umbridge_port: 49152
 
 model: 
   name: IH_powerLaw_stressBased
