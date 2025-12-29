@@ -25,23 +25,23 @@ workflow {
         PREPROCESS_DATA.out.done
     ) 
     
-    SERVE_MODEL(
-        script = file("$moduleDir/model/IH_model_server.py"),
-        src = file("$moduleDir/model/src"),
+    // SERVE_MODEL(
+    //     script = file("$moduleDir/model/IH_model_server.py"),
+    //     src = file("$moduleDir/model/src"),
+    //     name = model,
+    //     data = PREPROCESS_DATA.out.data, 
+    //     port = umbridge_port,
+    //     UQ_STATUS.out.comm
+    // )
+
+    SERVE_MODEL_JL(
+        script = file("$moduleDir/model_julia/IH_model_server.jl"),
+        src = file("$moduleDir/model_julia/src"),
         name = model,
         data = PREPROCESS_DATA.out.data, 
         port = umbridge_port,
         UQ_STATUS.out.comm
     )
-
-    // SERVE_MODEL_JL(
-    //     script = file("$moduleDir/model_julia/IH_model_server.jl"),
-    //     src = file("$moduleDir/model_julia/src"),
-    //     name = "IH_powerLaw_stressBased",
-    //     data = PREPROCESS_DATA.out.data, 
-    //     port = umbridge_port,
-    //     UQ_STATUS.out.comm
-    // )
 
 
     CALIBRATION( 
@@ -155,7 +155,7 @@ process SERVE_MODEL {
     PID=\$!
     echo "Model Server PID: \$PID"
     # Wait for the model server to start
-    while ! nc -z localhost ${port}; do
+    while ! bash -c "echo > /dev/tcp/localhost/${port}" 2>/dev/null; do
         sleep 1
     done
     echo "model_server_up" > ${status_comm}
@@ -174,47 +174,47 @@ process SERVE_MODEL {
     """
 }
 
-// process SERVE_MODEL_JL {
-//     container "file://$moduleDir/model_julia/container.sif"
-//     cache 'lenient'
+process SERVE_MODEL_JL {
+    // container "bpc_hemolyis/model_julia" 
+    container "file://$moduleDir/model_julia/container.sif"
+    cache 'lenient'
 
-//     input:
-//     path script
-//     path src
-//     val name
-//     path data
-//     val port
-//     path status_comm
+    input:
+    path script
+    path src
+    val name
+    path data
+    val port
+    path status_comm
 
-//     script:
-//     """
-//     #!/bin/bash
+    script:
+    """
+    #!/bin/bash
 
-
-//     # Start the model server in the background
-//     julia ${script} --name ${name} --data ${data} --port ${port} & 
+    # Start the model server in the background
+    julia ${script} --name ${name} --data ${data} --port ${port} & 
     
-//     PID=\$!
-//     echo "Model Server PID: \$PID"
-//     # Wait for the model server to start
-//     while ! curl http://localhost:${port}/Info -X GET ; do
-//         sleep 1
-//     done
-//     echo "model_server_up" > ${status_comm}
-//     echo "Model server is up and running on port ${port}"
+    PID=\$!
+    echo "Model Server PID: \$PID"
+    # Wait for the model server to start
+    while ! bash -c "echo > /dev/tcp/localhost/${port}" 2>/dev/null; do
+        sleep 1
+    done
+    echo "model_server_up" > ${status_comm}
+    echo "Model server is up and running on port ${port}"
 
-//     # Monitor the status 
-//     cat ${status_comm}  &
-//     STATUS_PID=\$!
-//     wait \$STATUS_PID
+    # Monitor the status 
+    cat ${status_comm}  &
+    STATUS_PID=\$!
+    wait \$STATUS_PID
 
-//     # Stop the model server when the signal is received
-//     kill \$PID
+    # Stop the model server when the signal is received
+    kill \$PID
 
-//     rm ${status_comm}
+    rm ${status_comm}
     
-//     """
-// }
+    """
+}
 
 process CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
