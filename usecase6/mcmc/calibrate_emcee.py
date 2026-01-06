@@ -229,4 +229,8 @@ if __name__ == "__main__":
     corner_plot.savefig(f"corner_plot_{model_name}_{data_basename}")
     print(f"Corner Plot saved to corner_plot_{model_name}_{data_basename}.png")
 
+    # Save samples as .npy file
+    np.save(f"trace_{model_name}_{data_basename}.npy", trace)
+    print(f"Samples saved to trace_{model_name}_{data_basename}.npy")
+
 

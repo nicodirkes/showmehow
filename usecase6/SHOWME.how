@@ -59,10 +59,11 @@ workflow {
     //   config = params,
     // )
 
-    BUNDLE_OUPUTS(
+    BUNDLE_OUTPUTS(
         experiment_params = params,
         mcmc_chain = CALIBRATION.out.mcmc_chain,
         mcmc_corner_plot = CALIBRATION.out.mcmc_corner_plot,
+        mcmc_trace = CALIBRATION.out.mcmc_trace,
     )
 
 }
@@ -318,6 +319,7 @@ process CALIBRATION {
     output:
     path "calibration_output*.npz", emit: mcmc_chain
     path "corner_plot*.png", emit: mcmc_corner_plot
+    path "trace_*.npy", emit: mcmc_trace
 
 }
 
@@ -348,13 +350,14 @@ process DIAGNOSTICS {
 
 }
 
-process BUNDLE_OUPUTS {
+process BUNDLE_OUTPUTS {
     publishDir "$moduleDir/outputs", mode: 'copy'
 
     input:
     val experiment_params
     path mcmc_chain
     path mcmc_corner_plot
+    path mcmc_trace
 
     script:
     def parameters = new YamlBuilder()
@@ -368,6 +371,7 @@ process BUNDLE_OUPUTS {
     cp _params.yml "${params.species}_${params.model.name}_${workflow.sessionId}"
     cp ${mcmc_chain} "${params.species}_${params.model.name}_${workflow.sessionId}/"
     cp ${mcmc_corner_plot} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    cp ${mcmc_trace} "${params.species}_${params.model.name}_${workflow.sessionId}/"
     """
 
     output:
