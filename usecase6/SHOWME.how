@@ -6,7 +6,7 @@ workflow {
     def species = params.species
     def model = params.model.name
     def use_model_jl = params.model.use_julia
-
+    def umbridge_port = Math.abs( new Random().nextInt() % (49152 - 16384) ) + 16384 // Selecting random ephemeral port for umbridge
 
     PULL_DATA_COSCINE (
         token_file = file("$moduleDir/pull_data/.token.txt"),
@@ -30,7 +30,8 @@ workflow {
             script = file("$moduleDir/model_julia/IH_model_server.jl"),
             src = file("$moduleDir/model_julia/src"),
             name = model,
-            data = PREPROCESS_DATA.out.data, 
+            data = PREPROCESS_DATA.out.data,
+            umbridge_port = umbridge_port,
             um_highway = START_UM_HIGHWAY.out
         )
     }
@@ -40,6 +41,7 @@ workflow {
             src = file("$moduleDir/model/src"),
             name = model,
             data = PREPROCESS_DATA.out.data, 
+            umbridge_port = umbridge_port,
             um_highway = START_UM_HIGHWAY.out
         )
     }
@@ -143,68 +145,42 @@ process START_UM_HIGHWAY {
 process SERVE_MODEL {
     conda "$moduleDir/model/environment.yml"
     cache 'lenient'
+    errorStrategy 'retry'
+    maxRetries 3
 
     input:
     path script
     path src
     val name
     path data
+    val umbridge_port
     path um_highway
 
     script:
     """
     #!/bin/bash
+    UMBRIDGE_PORT=${umbridge_port+100*(task.attempt-1)}
 
-    CHOSEN_PORT=""
-    MAX_ATTEMPTS=20
-
-    random_start_port() {
-        echo \$(( (RANDOM % 16384) + 49152 ))
-    }
-
-    ATTEMPT_PORT=\$(random_start_port)
-
-    try_port() {
-        local candidate_port=\$1
-        python ${script} --name ${name} --data ${data} --port \$candidate_port &
-        SERVER_PID=\$!
-        echo "Model Server PID: \$SERVER_PID (trying port \$candidate_port)"
-
-        # poll for 30 seconds if model is up
-        for _ in \$(seq 1 30); do
-            if bash -c "echo > /dev/tcp/localhost/\$candidate_port" 2>/dev/null; then
-                CHOSEN_PORT=\$candidate_port
-                return 0
-            fi
-            if ! kill -0 \$SERVER_PID 2>/dev/null; then
-                break
-            fi
-            sleep 1
-        done
-
-        kill \$SERVER_PID 2>/dev/null || true
-        wait \$SERVER_PID 2>/dev/null || true
-        return 1
-    }
-
-    ATTEMPT=1
-    while [ \$ATTEMPT -le \$MAX_ATTEMPTS ]; do
-        if try_port \$ATTEMPT_PORT; then
-            break
-        fi
-        ATTEMPT=\$((ATTEMPT + 1))
-        ATTEMPT_PORT=\$((ATTEMPT_PORT + 1 + (RANDOM % 100)))
-    done
-
-    if [ -z "\$CHOSEN_PORT" ]; then
-        echo "Failed to start model server after \${MAX_ATTEMPTS} attempts" >&2
+    # Abort if port already used (success means something is listening)
+    if bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; then
+        echo "Port \$UMBRIDGE_PORT already in use"
         exit 1
     fi
 
+    # Start model server
+    python ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
+    SERVER_PID=\$!
+    echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
+    
+    # Wait for model server to start 
+    while ! bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; do
+        sleep 1
+    done
+
     echo "Model ${name} ready" > $um_highway/model_info
 
-    echo "\$CHOSEN_PORT" > $um_highway/umbridge_port
-    echo "Model server is running on port \${CHOSEN_PORT}"
+    echo "\$UMBRIDGE_PORT" > $um_highway/umbridge_port
+    echo "Model server is running on port \$UMBRIDGE_PORT"
 
     # Monitor the status 
     echo "Waiting for UQ to complete..."
@@ -212,77 +188,52 @@ process SERVE_MODEL {
 
     # Stop the model server when the signal is received
     kill \$SERVER_PID
-    echo "Model server on port \${CHOSEN_PORT} stopped."
+    echo "Model server on port \$UMBRIDGE_PORT stopped."
 
     """
 }
 
 process SERVE_MODEL_JL {
     container "bpc_hemolysis/model_julia" 
+    containerOptions "-p ${umbridge_port+100*(task.attempt-1)}:${umbridge_port+100*(task.attempt-1)}"
     // container "file://$moduleDir/model_julia/container.sif"
     cache 'lenient'
+    errorStrategy 'retry'
+    maxRetries 3
 
     input:
     path script
     path src
     val name
     path data
+    val umbridge_port
     path um_highway
 
     script:
     """
     #!/bin/bash
+    UMBRIDGE_PORT=${umbridge_port+100*(task.attempt-1)}
 
-    CHOSEN_PORT=""
-    MAX_ATTEMPTS=20
-
-    random_start_port() {
-        echo \$(( (RANDOM % 16384) + 49152 ))
-    }
-
-    ATTEMPT_PORT=\$(random_start_port)
-
-    try_port() {
-        local candidate_port=\$1
-        julia ${script} --name ${name} --data ${data} --port \$candidate_port &
-        SERVER_PID=\$!
-        echo "Model Server PID: \$SERVER_PID (trying port \$candidate_port)"
-        
-        # poll for 30 seconds if model is up
-        for _ in \$(seq 1 30); do
-            if bash -c "echo > /dev/tcp/localhost/\$candidate_port" 2>/dev/null; then
-                CHOSEN_PORT=\$candidate_port
-                return 0
-            fi
-            if ! kill -0 \$SERVER_PID 2>/dev/null; then
-                break
-            fi
-            sleep 1
-        done
-
-        kill \$SERVER_PID 2>/dev/null || true
-        wait \$SERVER_PID 2>/dev/null || true
-        return 1
-    }
-
-    ATTEMPT=1
-    while [ \$ATTEMPT -le \$MAX_ATTEMPTS ]; do
-        if try_port \$ATTEMPT_PORT; then
-            break
-        fi
-        ATTEMPT=\$((ATTEMPT + 1))
-        ATTEMPT_PORT=\$((ATTEMPT_PORT + 1 + (RANDOM % 100)))
-    done
-
-    if [ -z "\$CHOSEN_PORT" ]; then
-        echo "Failed to start model server after \${MAX_ATTEMPTS} attempts" >&2
+    # Abort if port already used (success means something is listening)
+    if bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; then
+        echo "Port \$UMBRIDGE_PORT already in use"
         exit 1
     fi
 
+    # Start model server
+    julia ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
+    SERVER_PID=\$!
+    echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
+    
+    # Wait for model server to start 
+    while ! bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; do
+        sleep 1
+    done
+
     echo "Model ${name} ready" > $um_highway/model_info
 
-    echo "\$CHOSEN_PORT" > $um_highway/umbridge_port
-    echo "Model server is running on port \${CHOSEN_PORT}"
+    echo "\$UMBRIDGE_PORT" > $um_highway/umbridge_port
+    echo "Model server is running on port \$UMBRIDGE_PORT"
 
     # Monitor the status 
     echo "Waiting for UQ to complete..."
@@ -290,8 +241,7 @@ process SERVE_MODEL_JL {
 
     # Stop the model server when the signal is received
     kill \$SERVER_PID
-    echo "Model server on port \${CHOSEN_PORT} stopped."
-    
+    echo "Model server on port \$UMBRIDGE_PORT stopped."
 
     """
 }
@@ -315,7 +265,7 @@ process MCMC_CALIBRATION {
     echo "${parameters.toString()}" > _params.yml
 
     echo "Waiting for model server to start..."
-    
+
     cat $um_highway/model_info 
     
     MODEL_PORT=\$(cat $um_highway/umbridge_port)
