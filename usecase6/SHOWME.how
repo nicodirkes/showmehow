@@ -211,7 +211,7 @@ process SERVE_MODEL {
 }
 
 process SERVE_MODEL_JL {
-    container "bpc_hemolyis/model_julia" 
+    container "bpc_hemolysis/model_julia" 
     // container "file://$moduleDir/model_julia/container.sif"
     cache 'lenient'
 
