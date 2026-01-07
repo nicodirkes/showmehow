@@ -21,7 +21,7 @@ workflow {
         indir = PULL_DATA_COSCINE.out
     )
 
-    UQ_STATUS (
+    START_UM_HIGHWAY (
         PREPROCESS_DATA.out.done
     ) 
     
@@ -31,7 +31,7 @@ workflow {
             src = file("$moduleDir/model_julia/src"),
             name = model,
             data = PREPROCESS_DATA.out.data, 
-            UQ_STATUS.out.comm
+            um_highway = START_UM_HIGHWAY.out
         )
     }
     else {
@@ -40,30 +40,35 @@ workflow {
             src = file("$moduleDir/model/src"),
             name = model,
             data = PREPROCESS_DATA.out.data, 
-            UQ_STATUS.out.comm
+            um_highway = START_UM_HIGHWAY.out
         )
     }
 
-    CALIBRATION( 
+    MCMC_CALIBRATION( 
         script = file("$moduleDir/mcmc/calibrate_emcee.py"),
         config = params,
         data = PREPROCESS_DATA.out.data,
-        UQ_STATUS.out.comm
+        um_highway = START_UM_HIGHWAY.out
     )
 
     // DIAGNOSTICS(
     //   script = file("$moduleDir/diagnostics/run_diagnostics.py"),
-    //   mcmc_results = CALIBRATION.out.mcmc_chain,
+    //   mcmc_results = MCMC_CALIBRATION.out.mcmc_chain,
     //   outdir = "diagnostics_assesment",
     //   species = species,
     //   config = params,
     // )
 
+    STOP_UM_HIGHWAY(
+        uq_done = MCMC_CALIBRATION.out.done,
+        um_highway = START_UM_HIGHWAY.out
+    )
+
     BUNDLE_OUTPUTS(
         experiment_params = params,
-        mcmc_chain = CALIBRATION.out.mcmc_chain,
-        mcmc_corner_plot = CALIBRATION.out.mcmc_corner_plot,
-        mcmc_trace = CALIBRATION.out.mcmc_trace,
+        mcmc_chain = MCMC_CALIBRATION.out.mcmc_chain,
+        mcmc_corner_plot = MCMC_CALIBRATION.out.mcmc_corner_plot,
+        mcmc_trace = MCMC_CALIBRATION.out.mcmc_trace,
     )
 
 }
@@ -119,17 +124,20 @@ process PREPROCESS_DATA{
     """
 }
 
-process UQ_STATUS {
+process START_UM_HIGHWAY {
     input:
     val ready
 
     script:
     """
-    mkfifo status_info
+    mkdir comm
+    mkfifo comm/model_info
+    mkfifo comm/uq_info
+    mkfifo comm/umbridge_port
     """
 
     output:
-    path "status_info", emit: comm
+    path "comm"
 }
 
 process SERVE_MODEL {
@@ -141,7 +149,7 @@ process SERVE_MODEL {
     path src
     val name
     path data
-    path status_comm
+    path um_highway
 
     script:
     """
@@ -193,22 +201,19 @@ process SERVE_MODEL {
         exit 1
     fi
 
-    echo "\$CHOSEN_PORT" > ${status_comm}
-    echo "Model server is up and running on port \${CHOSEN_PORT}"
+    echo "Model ${name} ready" > $um_highway/model_info
 
-    # In order to use a single status_comm pipe
-    sleep 5
+    echo "\$CHOSEN_PORT" > $um_highway/umbridge_port
+    echo "Model server is running on port \${CHOSEN_PORT}"
 
     # Monitor the status 
-    cat ${status_comm}  &
-    STATUS_PID=\$!
-    wait \$STATUS_PID
+    echo "Waiting for UQ to complete..."
+    cat $um_highway/uq_info
 
     # Stop the model server when the signal is received
     kill \$SERVER_PID
+    echo "Model server on port \${CHOSEN_PORT} stopped."
 
-    rm ${status_comm}
-    
     """
 }
 
@@ -222,7 +227,7 @@ process SERVE_MODEL_JL {
     path src
     val name
     path data
-    path status_comm
+    path um_highway
 
     script:
     """
@@ -274,26 +279,24 @@ process SERVE_MODEL_JL {
         exit 1
     fi
 
-    echo "\$CHOSEN_PORT" > ${status_comm}
-    echo "Model server is up and running on port \${CHOSEN_PORT}"
+    echo "Model ${name} ready" > $um_highway/model_info
 
-    # In order to use a single status_comm pipe
-    sleep 5
+    echo "\$CHOSEN_PORT" > $um_highway/umbridge_port
+    echo "Model server is running on port \${CHOSEN_PORT}"
 
     # Monitor the status 
-    cat ${status_comm}  &
-    STATUS_PID=\$!
-    wait \$STATUS_PID
+    echo "Waiting for UQ to complete..."
+    cat $um_highway/uq_info
 
     # Stop the model server when the signal is received
     kill \$SERVER_PID
-
-    rm ${status_comm}
+    echo "Model server on port \${CHOSEN_PORT} stopped."
     
+
     """
 }
 
-process CALIBRATION {
+process MCMC_CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
 
@@ -302,7 +305,7 @@ process CALIBRATION {
     path script
     val config
     path data
-    path status_comm
+    path um_highway
 
 
     script:
@@ -311,21 +314,40 @@ process CALIBRATION {
     """
     echo "${parameters.toString()}" > _params.yml
 
-    MODEL_PORT=\$(cat ${status_comm})
-    echo "Model server is up and running on port \${MODEL_PORT}"
+    echo "Waiting for model server to start..."
+    
+    cat $um_highway/model_info 
+    
+    MODEL_PORT=\$(cat $um_highway/umbridge_port)
+    echo "Model server is running on port \${MODEL_PORT}"
     
     python ${script}  --config _params.yml --data ${data} --port \${MODEL_PORT}
     
-    echo "mcmc_done" > ${status_comm} # signal to stop the model server
+    echo "MCMC Calibration complete" > $um_highway/uq_info # signal to stop the model server
     """
 
     output:
     path "calibration_output*.npz", emit: mcmc_chain
     path "corner_plot*.png", emit: mcmc_corner_plot
     path "trace_*.npy", emit: mcmc_trace
+    val true, emit: done
 
 }
 
+process STOP_UM_HIGHWAY {
+    input:
+        val uq_done
+        path um_highway
+
+    script:
+        """
+        rm ${um_highway}/model_info
+        rm ${um_highway}/uq_info
+        rm ${um_highway}/umbridge_port
+
+        """
+    
+}
 process DIAGNOSTICS {
     conda "$moduleDir/diagnostics/environment.yml"
     publishDir "$moduleDir/outputs", mode: 'copy'
