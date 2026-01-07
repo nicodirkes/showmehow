@@ -196,6 +196,8 @@ process SERVE_MODEL {
     echo "\$CHOSEN_PORT" > ${status_comm}
     echo "Model server is up and running on port \${CHOSEN_PORT}"
 
+    # In order to use a single status_comm pipe
+    sleep 5
 
     # Monitor the status 
     cat ${status_comm}  &
