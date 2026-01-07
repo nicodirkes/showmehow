@@ -310,6 +310,7 @@ process CALIBRATION {
     echo "${parameters.toString()}" > _params.yml
 
     MODEL_PORT=\$(cat ${status_comm})
+    echo "Model server is up and running on port \${MODEL_PORT}"
     
     python ${script}  --config _params.yml --data ${data} --port \${MODEL_PORT}
     
