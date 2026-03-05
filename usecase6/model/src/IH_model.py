@@ -8,20 +8,22 @@ logF = np.log
 invLogF = np.exp
 
 # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
-p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+G1 = 3750
+G2 = 42000
 
 def computeEffShearStrainBased(t, f1):
     return 1 - np.exp(-f1 * t)
 
 def computePoreAreaInterpolated(G):
-    if G < 3740:
+    if G < G1:
         return 0.0
-    elif G > 42000:
-        return 6.1932
+    elif G > G2:
+        return np.ones_like(G) * sum(p)
     else:
-        return p[0] + p[1]*G + p[2]*G**2 + p[3]*G**3 + p[4]*G**4 + p[5]*G**5
+        return np.polyval(p[::-1], G/G2)
     
-def IH_poreFormation_stressBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, V_RBC=147.494):
+def IH_poreFormation_stressBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035):
     """
     Model #4: Compute IH with pore formation model based on stress-based morphology.
     """
@@ -30,11 +32,11 @@ def IH_poreFormation_stressBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, V
     Apt = computePoreAreaInterpolated(G_exp) * t_exp
     if log:
         Apt = max(Apt, 1e-10)  # ensure Apt is not zero for log calculation
-        return -h - logF(V_RBC) + k * logF(G_exp) + logF(Apt) + logF(100)
+        return -h + k * logF(sigma_exp) + logF(Apt) + logF(100)
     else:
-        return invLogF(-h) * (G_exp ** k) * Apt / V_RBC * 100
+        return invLogF(-h) * (sigma_exp ** k) * Apt * 100
 
-def IH_poreFormation_strainBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, V_RBC=147.494, analytical=False):
+def IH_poreFormation_strainBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f1=5.0, analytical=False):
     """
     Model #3: Compute IH with pore formation model based on strain-based morphology.
     Sensible limits:
@@ -52,9 +54,9 @@ def IH_poreFormation_strainBased(t_exp, sigma_exp, h, k, log=False, mu=0.0035, f
 
     if log:
         Apt = max(Apt, 1e-10)  # ensure Apt is not zero for log calculation
-        return -h - logF(V_RBC) + k * logF(G_exp) + logF(Apt) + logF(100)
+        return -h + k * logF(sigma_exp) + logF(Apt) + logF(100)
     else:
-        return invLogF(-h) * (G_exp ** k) * Apt / V_RBC * 100
+        return invLogF(-h) * (sigma_exp ** k) * Apt * 100
 
 def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
     """
@@ -66,9 +68,9 @@ def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
     # Analytical integral of pore area formation
     
     # First: find transition time points where G_eff crosses interpolation limits
-    t1 = -np.log(1 - 3740 / G) / f if G > 3740 else t_exp
+    t1 = -np.log(1 - G1 / G) / f if G > G1 else t_exp
     t1 = min(t1, t_exp)
-    t2 = -np.log(1 - 42000 / G) / f if G > 42000 else t_exp
+    t2 = -np.log(1 - G2 / G) / f if G > G2 else t_exp
     t2 = min(t2, t_exp)
 
     # Integrate in three parts
