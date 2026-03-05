@@ -79,11 +79,11 @@ def integral_poreFormation_analytical(t_exp, G_exp, f=5.0):
     # Part 2: from t1 to t2 (if applicable)
     if t2 > t1:
         for i in range(6):  # iterate over polynomial terms
-            integral += p[i] * G**i * integrate_normalized_Geff(f, i, t1, t2)
+            integral += p[i] * (G/G2)**i * integrate_normalized_Geff(f, i, t1, t2)
 
     # Part 3: from t2 to t_exp (if applicable)
     if t_exp > t2:
-        integral += 6.1932 * (t_exp - t2)
+        integral += sum(p) * (t_exp - t2)
 
     return integral
 
