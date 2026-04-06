@@ -10,126 +10,149 @@ import corner
 
 
 
-def get_distribution(prior_config:dict):
-    name = prior_config["name"]
-    distribution = prior_config["distribution"]
+class Prior:
+    @staticmethod
+    def _distributions_from_config(prior_config: dict):
+        name = prior_config["name"]
+        distribution = prior_config["distribution"]
 
-    if distribution["type"] not in ["uniform", "normal", "truncated_normal"]:
-        print(f"Distribution type {distribution["type"]} not yet supported")
-        print("Aborting MCMC Calibration")
-        exit(1)
-
-    if distribution["type"] == "uniform":
-        if not all(attribute in distribution["attribute"] for attribute in ("upper_bound", "lower_bound")):
-            print(f"Incorrect definition of prior for parameter '{name}'",
-                f"\nA uniform prior requires `lower_bound` and `upper_bound` attributes")
+        if distribution["type"] not in ["uniform", "normal", "truncated_normal"]:
+            print(f"Distribution type {distribution["type"]} not yet supported")
             print("Aborting MCMC Calibration")
             exit(1)
-        else:
-            loc=distribution["attribute"]["lower_bound"],
-            scale=distribution["attribute"]["upper_bound"]-distribution["attribute"]["lower_bound"]
-            return uniform(loc, scale)
-    elif distribution["type"] == "normal":
-        if not all(attribute in distribution["attribute"] for attribute in ("loc", "scale")):
-            print(f"Incorrect definition of prior for parameter '{name}'",
-                f"\nA {distribution["type"]} prior requires `loc` and `scale` attributes")
-            print("Aborting MCMC Calibration")
-            exit(1)
-        else: 
-            loc=distribution["attribute"]["loc"],
-            scale=distribution["attribute"]["scale"]
-            return norm(loc, scale)
-    elif distribution["type"] == "truncated_normal":
-        if not (all(attribute in distribution["attribute"] for attribute in ("loc", "scale"))
-                and any(attribute in distribution["attribute"] for attribute in ("lower_bound", "upper_bound"))):
-            print(f"Incorrect definition of prior for parameter '{name}'",
-                f"\nA {distribution["type"]} prior requires `loc`, `scale`, `lower_bound` and/or `upper_bound` attributes")
-            print("Aborting MCMC Calibration")
-            exit(1)
-        else: 
-            lower_bound = distribution["attribute"].get("lower_bound", -np.inf)
-            upper_bound = distribution["attribute"].get("upper_bound", np.inf)
-            loc=distribution["attribute"]["loc"]
-            scale=distribution["attribute"]["scale"]
-            a, b = (lower_bound - loc) / scale, (upper_bound - loc) / scale
-            return truncnorm(a, b, loc, scale)
 
-def get_prior_distributions(priors:dict, parameters, noise_parameters, calibrate_noise=False):
-    if calibrate_noise==True:
-        parameters += noise_parameters
-    prior_names = [prior["name"] for prior in priors]
-    distributions = []
-    for parameter in parameters:
-        distributions.append(get_distribution(priors[prior_names.index(parameter)]))
-    return distributions
+        if distribution["type"] == "uniform":
+            if not all(attribute in distribution["attribute"] for attribute in ("upper_bound", "lower_bound")):
+                print(f"Incorrect definition of prior for parameter '{name}'",
+                    f"\nA uniform prior requires `lower_bound` and `upper_bound` attributes")
+                print("Aborting MCMC Calibration")
+                exit(1)
+            else:
+                loc = distribution["attribute"]["lower_bound"]
+                scale = distribution["attribute"]["upper_bound"] - distribution["attribute"]["lower_bound"]
+                return uniform(loc, scale)
+        elif distribution["type"] == "normal":
+            if not all(attribute in distribution["attribute"] for attribute in ("loc", "scale")):
+                print(f"Incorrect definition of prior for parameter '{name}'",
+                    f"\nA {distribution["type"]} prior requires `loc` and `scale` attributes")
+                print("Aborting MCMC Calibration")
+                exit(1)
+            else:
+                loc = distribution["attribute"]["loc"]
+                scale = distribution["attribute"]["scale"]
+                return norm(loc, scale)
+        elif distribution["type"] == "truncated_normal":
+            if not (all(attribute in distribution["attribute"] for attribute in ("loc", "scale"))
+                    and any(attribute in distribution["attribute"] for attribute in ("lower_bound", "upper_bound"))):
+                print(f"Incorrect definition of prior for parameter '{name}'",
+                    f"\nA {distribution["type"]} prior requires `loc`, `scale`, `lower_bound` and/or `upper_bound` attributes")
+                print("Aborting MCMC Calibration")
+                exit(1)
+            else:
+                lower_bound = distribution["attribute"].get("lower_bound", -np.inf)
+                upper_bound = distribution["attribute"].get("upper_bound", np.inf)
+                loc = distribution["attribute"]["loc"]
+                scale = distribution["attribute"]["scale"]
+                a, b = (lower_bound - loc) / scale, (upper_bound - loc) / scale
+                return truncnorm(a, b, loc, scale)
 
-def get_log_prior(prior_distributions: list):
-    def log_prior(parameters) -> float:
-        nonlocal prior_distributions
-        log_prior=0.0
+    def __init__(self, config: dict, parameters: list, noise_parameters: list, calibrate_noise: bool = False):
+        self.config = config
+        self.parameters = parameters
+        self.noise_parameters = noise_parameters
+        self.calibrate_noise = calibrate_noise
+
+        all_parameters = list(parameters)
+        if calibrate_noise:
+            all_parameters += noise_parameters
+
+        prior_names = [p["name"] for p in config]
+        self.distributions = [
+            Prior._distributions_from_config(config[prior_names.index(name)])
+            for name in all_parameters
+        ]
+
+
+class LogPrior:
+    def __init__(self, priors: Prior):
+        self.priors = priors
+
+    def eval(self, parameters) -> float:
+        log_p = 0.0
         for i, theta in enumerate(parameters):
-            support = prior_distributions[i].support()
+            support = self.priors.distributions[i].support()
             if not (support[0] <= theta <= support[1]):
                 return -np.inf
-            else:
-                log_prior+= prior_distributions[i].logpdf(theta)
-        return log_prior
-    return log_prior
+            log_p += self.priors.distributions[i].logpdf(theta)
+        return log_p
 
-def get_log_likelihood(model: callable, data : np.ndarray, n_noise_parameters=1, calibrate_noise=True, noise_sigma=None, distribution_type="normal") -> float:
-    
-    if calibrate_noise and n_noise_parameters > 1:
-        print(f"Only 1 noise parameter supported for log_likelihood")
-        print("Aborting MCMC Calibration")
-        exit(1)
-    if not calibrate_noise and noise_sigma==None:
-        print(f"log_likelihood function requires `noise_sigma` to be provided")
-        print("Aborting MCMC Calibration")
-        exit(1)
-    def log_likelihood(parameters):
-        nonlocal model, data, compute_log_likelihood, n_noise_parameters, calibrate_noise, noise_sigma
-        if calibrate_noise:
-            noise_sigma = np.asarray(parameters[-n_noise_parameters:])
-            model_parameters = parameters[:-n_noise_parameters]
+
+class LogLikelihood:
+    def __init__(self, model, data: np.ndarray, n_noise_parameters: int = 1, calibrate_noise: bool = True, noise_sigma=None, distribution_type: str = "normal"):
+        if calibrate_noise and n_noise_parameters > 1:
+            print("Only 1 noise parameter supported for log_likelihood")
+            print("Aborting MCMC Calibration")
+            exit(1)
+        if not calibrate_noise and noise_sigma is None:
+            print("log_likelihood requires `noise_sigma` to be provided")
+            print("Aborting MCMC Calibration")
+            exit(1)
+
+        self.model = model
+        self.data = data
+        self.n_noise_parameters = n_noise_parameters
+        self.calibrate_noise = calibrate_noise
+        self.noise_sigma = noise_sigma
+        self.distribution_type = distribution_type
+        self.distribution_func = self._resolve_distribution_func()
+
+    def eval(self, parameters) -> float:
+        if self.calibrate_noise:
+            noise_sigma = np.asarray(parameters[-self.n_noise_parameters:])
+            model_parameters = parameters[:-self.n_noise_parameters]
             if any(sigma <= 0.0 for sigma in noise_sigma):
                 return -np.inf
+        else:
+            noise_sigma = self.noise_sigma
 
         try:
-            prediction_mean = np.asarray(model([[*model_parameters]]))
-        except Exception as e:
+            prediction_mean = np.asarray(self.model([[*model_parameters]]))
+        except Exception:
             return -np.inf
-        
-        if prediction_mean.shape != data.shape:
+
+        if prediction_mean.shape != self.data.shape:
             raise ValueError("shape of model predictions does not match observations")
 
-        return compute_log_likelihood(data, prediction_mean, noise_sigma)
-    
-    if distribution_type == "normal":
-        def compute_log_likelihood(data, prediction_mean, noise_sigma):
-            # Handwritten function to efficiently compute "normal" log likelihood
-            # Only handles scalar noise_sigma
-            variance = noise_sigma * noise_sigma            
-            return -0.5 * (np.log(2.0 * np.pi * variance) + ((data - prediction_mean) ** 2) / variance).sum()
-        return log_likelihood
+        return self.distribution_func(prediction_mean, noise_sigma)
 
-    else: 
-        print(f"Distribution type {distribution_type} not yet supported for log_likelihood")
-        print("Aborting MCMC Calibration")
-        exit(1)
+    def _log_normal(self, prediction_mean, noise_sigma):
+        variance = noise_sigma * noise_sigma
+        return -0.5 * (np.log(2.0 * np.pi * variance) + ((self.data - prediction_mean) ** 2) / variance).sum()
 
-def get_log_posterior(log_prior: callable, log_likelihood: callable) -> np.ndarray:
+    def _resolve_distribution_func(self):
+        if self.distribution_type == "normal":
+            return self._log_normal
+        else:
+            print(f"Distribution type {self.distribution_type} not yet supported for log_likelihood")
+            print("Aborting MCMC Calibration")
+            exit(1)
 
-    def log_posterior(parameters):
-        log_posterior = log_prior(parameters) + log_likelihood(parameters)
-        return log_posterior
-    return log_posterior
 
-def initialize_walkers(nwalkers: int, prior_distributions) -> np.ndarray:
-    nparameters = len(prior_distributions)
+class LogPosterior:
+    def __init__(self, log_prior: LogPrior, log_likelihood: LogLikelihood):
+        self.log_prior = log_prior
+        self.log_likelihood = log_likelihood
+
+    def eval(self, parameters) -> float:
+        return self.log_prior.eval(parameters) + self.log_likelihood.eval(parameters)
+
+
+def initialize_walkers(nwalkers: int, priors: Prior) -> np.ndarray:
+    nparameters = len(priors.distributions)
     initial_positions = np.zeros((nwalkers, nparameters))
 
     for i in range(nparameters):
-        initial_positions[:, i] = prior_distributions[i].rvs(size=nwalkers)
+        initial_positions[:, i] = priors.distributions[i].rvs(size=nwalkers)
 
     return initial_positions
 
@@ -190,29 +213,22 @@ if __name__ == "__main__":
         exit(1)
 
     # Define Prior Distributions
-    prior_distributions = get_prior_distributions(config["calibration"]["priors"],
-                                                parameters=config["calibration"]["parameters"],
-                                                noise_parameters=config["calibration"]["noise_parameters"],
-                                                calibrate_noise=config["calibration"]["calibrate_noise"])
+    priors = Prior(config["calibration"]["priors"],
+                    parameters=config["calibration"]["parameters"],
+                    noise_parameters=config["calibration"]["noise_parameters"],
+                    calibrate_noise=config["calibration"]["calibrate_noise"])
 
-    # Get Prior and Likelihood Functions
-    log_prior_func=get_log_prior(prior_distributions)
-    log_likelihood_func=get_log_likelihood(model,data,
+    log_prior = LogPrior(priors)
+    log_likelihood = LogLikelihood(model, data,
                                     calibrate_noise=config["calibration"]["calibrate_noise"],
                                     n_noise_parameters=len(config["calibration"]["noise_parameters"]),
-                                    noise_sigma = config["calibration"].get("noise_sigma", None))
-
-    # Define Log Posterior Funciton
-    log_posterior_func= get_log_posterior(
-        log_prior=log_prior_func, 
-        log_likelihood=log_likelihood_func
-        )
-    
+                                    noise_sigma=config["calibration"].get("noise_sigma", None))
+    log_posterior = LogPosterior(log_prior, log_likelihood)
 
     # Perform MCMC Calibration
-    trace, sampler, lnprob, samples = perform_mcmc(prior_distributions, log_posterior_func, 
-                nwalkers=config["calibration"]["nwalkers"], 
-                nburn=config["calibration"]["nburn"], 
+    trace, sampler, lnprob, samples = perform_mcmc(priors, log_posterior.eval,
+                nwalkers=config["calibration"]["nwalkers"],
+                nburn=config["calibration"]["nburn"],
                 nsteps=config["calibration"]["nsteps"])
     
     
