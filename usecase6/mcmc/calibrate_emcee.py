@@ -74,16 +74,16 @@ class Prior:
 
 
 class LogPrior:
-    def __init__(self, priors: Prior):
-        self.priors = priors
+    def __init__(self, prior: Prior):
+        self.prior = prior
 
     def eval(self, parameters) -> float:
         log_p = 0.0
         for i, theta in enumerate(parameters):
-            support = self.priors.distributions[i].support()
+            support = self.prior.distributions[i].support()
             if not (support[0] <= theta <= support[1]):
                 return -np.inf
-            log_p += self.priors.distributions[i].logpdf(theta)
+            log_p += self.prior.distributions[i].logpdf(theta)
         return log_p
 
 
@@ -147,22 +147,22 @@ class LogPosterior:
         return self.log_prior.eval(parameters) + self.log_likelihood.eval(parameters)
 
 
-def initialize_walkers(nwalkers: int, priors: Prior) -> np.ndarray:
-    nparameters = len(priors.distributions)
+def initialize_walkers(nwalkers: int, prior: Prior) -> np.ndarray:
+    nparameters = len(prior.distributions)
     initial_positions = np.zeros((nwalkers, nparameters))
 
     for i in range(nparameters):
-        initial_positions[:, i] = priors.distributions[i].rvs(size=nwalkers)
+        initial_positions[:, i] = prior.distributions[i].rvs(size=nwalkers)
 
     return initial_positions
 
-def perform_mcmc(prior_distributions, log_posterior, nwalkers=50, nburn=2500, nsteps=5000):
+def perform_mcmc(prior, log_posterior, nwalkers=50, nburn=2500, nsteps=5000):
     
     # Initialize Walkers        
-    initial_positions = initialize_walkers(nwalkers, prior_distributions)
+    initial_positions = initialize_walkers(nwalkers, prior)
     
     # Setup Sampler
-    ndim = len(prior_distributions)
+    ndim = len(prior.distributions)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, log_posterior)
     
     # Run Calibration
@@ -213,12 +213,12 @@ if __name__ == "__main__":
         exit(1)
 
     # Define Prior Distributions
-    priors = Prior(config["calibration"]["priors"],
+    prior = Prior(config["calibration"]["priors"],
                     parameters=config["calibration"]["parameters"],
                     noise_parameters=config["calibration"]["noise_parameters"],
                     calibrate_noise=config["calibration"]["calibrate_noise"])
 
-    log_prior = LogPrior(priors)
+    log_prior = LogPrior(prior)
     log_likelihood = LogLikelihood(model, data,
                                     calibrate_noise=config["calibration"]["calibrate_noise"],
                                     n_noise_parameters=len(config["calibration"]["noise_parameters"]),
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     log_posterior = LogPosterior(log_prior, log_likelihood)
 
     # Perform MCMC Calibration
-    trace, sampler, lnprob, samples = perform_mcmc(priors, log_posterior.eval,
+    trace, sampler, lnprob, samples = perform_mcmc(prior, log_posterior.eval,
                 nwalkers=config["calibration"]["nwalkers"],
                 nburn=config["calibration"]["nburn"],
                 nsteps=config["calibration"]["nsteps"])
