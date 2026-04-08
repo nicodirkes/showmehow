@@ -211,18 +211,20 @@ function IH_poreFormation_stressBased(t_exp, sigma_exp, h, k)
     """
     # Parameters
     mu=0.0035
-    V_RBC=147.494
 
     function computePoreAreaInterpolated(G)
-        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)    
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750
+        G2 = 42000
 
-        if G < 3740
+        if G < G1
             return 0.0
-        elseif G > 42000
-            return 6.1932
+        elseif G > G2
+            return sum(p)
         else
-            return p[1] + p[2]*G + p[3]*G^2 + p[4]*G^3 + p[5]*G^4 + p[6]*G^5
+            G_norm = G / G2
+            return p[6]*G_norm^5 + p[5]*G_norm^4 + p[4]*G_norm^3 + p[3]*G_norm^2 + p[2]*G_norm + p[1]
         end
     end
 
@@ -231,7 +233,7 @@ function IH_poreFormation_stressBased(t_exp, sigma_exp, h, k)
     Apt = computePoreAreaInterpolated(G_exp) * t_exp
 
     # Compute IH%
-    return exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+    return exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
 
 
 end
@@ -246,18 +248,20 @@ function IH_poreFormation_strainBased_ivp(t_exp, sigma_exp, h, k)
     # Parameters
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     function computePoreAreaInterpolated(G)
-        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)    
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750
+        G2 = 42000
 
-        if G < 3740
+        if G < G1
             return 0.0
-        elseif G > 42000
-            return 6.1932
+        elseif G > G2
+            return sum(p)
         else
-            return p[1] + p[2]*G + p[3]*G^2 + p[4]*G^3 + p[5]*G^4 + p[6]*G^5
+            G_norm = G / G2
+            return p[6]*G_norm^5 + p[5]*G_norm^4 + p[4]*G_norm^3 + p[3]*G_norm^2 + p[2]*G_norm + p[1]
         end
     end
 
@@ -278,7 +282,7 @@ function IH_poreFormation_strainBased_ivp(t_exp, sigma_exp, h, k)
         Apt = sol[end]
 
         # Compute IH%
-        return exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+        return exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
     catch e
         return NaN
     end
@@ -298,18 +302,20 @@ function IH_poreFormation_strainBased_ivp_regularized(t_exp, sigma_exp, h, k; re
     # Parameters
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     function computePoreAreaInterpolated(G)
-        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)    
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750
+        G2 = 42000
 
-        if G < 3740
+        if G < G1
             return 0.0
-        elseif G > 42000
-            return 6.1932
+        elseif G > G2
+            return sum(p)
         else
-            return p[1] + p[2]*G + p[3]*G^2 + p[4]*G^3 + p[5]*G^4 + p[6]*G^5
+            G_norm = G / G2
+            return p[6]*G_norm^5 + p[5]*G_norm^4 + p[4]*G_norm^3 + p[3]*G_norm^2 + p[2]*G_norm + p[1]
         end
     end
 
@@ -330,7 +336,7 @@ function IH_poreFormation_strainBased_ivp_regularized(t_exp, sigma_exp, h, k; re
         Apt = sol[end]
 
         # Compute IH%
-        return (1.0 / regularizer) * exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+        return (1.0 / regularizer) * exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
     catch e
         return NaN
     end
@@ -350,18 +356,20 @@ function IH_poreFormation_strainBased_quad(t_exp, sigma_exp, h, k)
     # Parameters
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     function computePoreAreaInterpolated(G)
-        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)    
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750
+        G2 = 42000
 
-        if G < 3740
+        if G < G1
             return 0.0
-        elseif G > 42000
-            return 6.1932
+        elseif G > G2
+            return sum(p)
         else
-            return p[1] + p[2]*G + p[3]*G^2 + p[4]*G^3 + p[5]*G^4 + p[6]*G^5
+            G_norm = G / G2
+            return p[6]*G_norm^5 + p[5]*G_norm^4 + p[4]*G_norm^3 + p[3]*G_norm^2 + p[2]*G_norm + p[1]
         end
     end
 
@@ -370,7 +378,7 @@ function IH_poreFormation_strainBased_quad(t_exp, sigma_exp, h, k)
         # Compute Apt
         Apt, _ = quadgk(t -> computePoreAreaInterpolated(G_exp * (1.0 - exp(-f1 * t))), 0, t_exp)
         # Compute IH%
-        return exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+        return exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
     catch e
         return NaN
     end
@@ -390,18 +398,20 @@ function IH_poreFormation_strainBased_quad_regularized(t_exp, sigma_exp, h, k; r
     # Parameters
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     function computePoreAreaInterpolated(G)
-        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)    
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
+        # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750
+        G2 = 42000
 
-        if G < 3740
+        if G < G1
             return 0.0
-        elseif G > 42000
-            return 6.1932
+        elseif G > G2
+            return sum(p)
         else
-            return p[1] + p[2]*G + p[3]*G^2 + p[4]*G^3 + p[5]*G^4 + p[6]*G^5
+            G_norm = G / G2
+            return p[6]*G_norm^5 + p[5]*G_norm^4 + p[4]*G_norm^3 + p[3]*G_norm^2 + p[2]*G_norm + p[1]
         end
     end
 
@@ -410,7 +420,7 @@ function IH_poreFormation_strainBased_quad_regularized(t_exp, sigma_exp, h, k; r
         # Compute Apt
         Apt, _ = quadgk(t -> regularizer * computePoreAreaInterpolated(G_exp * (1.0 - exp(-f1 * t))), 0, t_exp)
         # Compute IH%
-        return (1.0 / regularizer) * exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+        return (1.0 / regularizer) * exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
     catch e
         return NaN
     end
@@ -427,7 +437,6 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
 
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     G_exp = sigma_exp / mu  # shear rate
 
@@ -457,14 +466,16 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
 
 
         # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
-    
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750.0
+        G2 = 42000.0
+
 
         # Analytical integral of pore area formation
         # First: find transition time points where G_eff crosses interpolation limits
-        t1 = (G > 3740.0) ? (-log(1.0 - 3740.0 / G) / f) : t_exp
+        t1 = (G > G1) ? (-log(1.0 - G1 / G) / f) : t_exp
         t1 = min(t1, t_exp)
-        t2 = (G > 42000.0) ? (-log(1.0 - 42000.0 / G) / f) : t_exp
+        t2 = (G > G2) ? (-log(1.0 - G2 / G) / f) : t_exp
         t2 = min(t2, t_exp)
 
         # Integrate in three parts
@@ -473,13 +484,13 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
         # Part 2: from t1 to t2 (if applicable)
         if t2 > t1
             for i in 0:5  # iterate over polynomial terms
-                integral += p[i+1] * G^i * integrate_normalized_Geff(f, i, t1, t2)
+                integral += p[i+1] * (G/G2)^i * integrate_normalized_Geff(f, i, t1, t2)
             end
         end
 
         # Part 3: from t2 to t_exp (if applicable)
         if t_exp > t2
-            integral += 6.1932 * (t_exp - t2)
+            integral += sum(p) * (t_exp - t2)
         end
         return integral
     end
@@ -488,7 +499,7 @@ function IH_poreFormation_strainBased_analytical_binomial(t_exp, sigma_exp, h, k
     # Compute integral of pore area formation
     Apt = integral_poreFormation_analytical(t_exp, G_exp, f1)
 
-    return exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+    return exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
 end
 
 
@@ -497,7 +508,6 @@ function IH_poreFormation_strainBased_analytical_hypergeometric(t_exp, sigma_exp
 
     f1=5.0
     mu=0.0035
-    V_RBC=147.494
 
     G_exp = sigma_exp / mu  # shear rate
 
@@ -519,14 +529,16 @@ function IH_poreFormation_strainBased_analytical_hypergeometric(t_exp, sigma_exp
 
 
         # Polynomial coefficients for the area strain to pore area conversion (fifth order polynomial fit)
-        p = [ 4.06157696e-02, -2.83266089e-05,  2.25830588e-08, -8.49450091e-13, 1.32415867e-17, -8.23845340e-23]
-    
+        p = [-0.1593, 0.6332, 32.3921, -48.9149, 37.3125, -13.4134]
+        G1 = 3750.0
+        G2 = 42000.0
+
 
         # Analytical integral of pore area formation
         # First: find transition time points where G_eff crosses interpolation limits
-        t1 = (G > 3740.0) ? (-log(1.0 - 3740.0 / G) / f) : t_exp
+        t1 = (G > G1) ? (-log(1.0 - G1 / G) / f) : t_exp
         t1 = min(t1, t_exp)
-        t2 = (G > 42000.0) ? (-log(1.0 - 42000.0 / G) / f) : t_exp
+        t2 = (G > G2) ? (-log(1.0 - G2 / G) / f) : t_exp
         t2 = min(t2, t_exp)
 
         # Integrate in three parts
@@ -535,13 +547,13 @@ function IH_poreFormation_strainBased_analytical_hypergeometric(t_exp, sigma_exp
         # Part 2: from t1 to t2 (if applicable)
         if t2 > t1
             for i in 0:5  # iterate over polynomial terms
-                integral += p[i+1] * G^i * integrate_normalized_Geff(f, i, t1, t2)
+                integral += p[i+1] * (G/G2)^i * integrate_normalized_Geff(f, i, t1, t2)
             end
         end
 
         # Part 3: from t2 to t_exp (if applicable)
         if t_exp > t2
-            integral += 6.1932 * (t_exp - t2)
+            integral += sum(p) * (t_exp - t2)
         end
         return integral
     end
@@ -550,5 +562,5 @@ function IH_poreFormation_strainBased_analytical_hypergeometric(t_exp, sigma_exp
     # Compute integral of pore area formation
     Apt = integral_poreFormation_analytical(t_exp, G_exp, f1)
 
-    return exp(-h) * (G_exp^k) * Apt / V_RBC * 100 # convert to percentage
+    return exp(-h) * (sigma_exp^k) * Apt * 100 # convert to percentage
 end
