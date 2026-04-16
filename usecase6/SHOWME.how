@@ -53,20 +53,20 @@ workflow {
         um_highway = SETUP_UM_IPC.out
     )
 
-    // DIAGNOSTICS(
-    //   script = file("$moduleDir/diagnostics/run_diagnostics.py"),
-    //   mcmc_results = MCMC_CALIBRATION.out.mcmc_chain,
-    //   outdir = "diagnostics_assesment",
-    //   species = species,
-    //   config = params,
-    // )
+    RUN_DIAGNOSTICS(
+      script = file("$moduleDir/diagnostics/run_diagnostics.py"),
+      mcmc_idata = MCMC_CALIBRATION.out.mcmc_idata,
+      outdir = "diagnostics",
+    )
 
 
     BUNDLE_OUTPUTS(
         experiment_params = params,
-        mcmc_chain = MCMC_CALIBRATION.out.mcmc_chain,
+        mcmc_output = MCMC_CALIBRATION.out.mcmc_output,
         mcmc_corner_plot = MCMC_CALIBRATION.out.mcmc_corner_plot,
         mcmc_trace = MCMC_CALIBRATION.out.mcmc_trace,
+        mcmc_idata = MCMC_CALIBRATION.out.mcmc_idata,
+        mcmc_diagnostics = RUN_DIAGNOSTICS.out
     )
 
 }
@@ -281,36 +281,30 @@ process MCMC_CALIBRATION {
     """
 
     output:
-    path "calibration_output*.npz", emit: mcmc_chain
-    path "corner_plot*.png", emit: mcmc_corner_plot
-    path "trace_*.npy", emit: mcmc_trace
+    path "mcmc_output.npz", emit: mcmc_output
+    path "corner_plot.png", emit: mcmc_corner_plot
+    path "trace.npy", emit: mcmc_trace
+    path "mcmc_idata.nc", emit: mcmc_idata
 
 }
 
 
-process DIAGNOSTICS {
+process RUN_DIAGNOSTICS {
     conda "$moduleDir/diagnostics/environment.yml"
-    publishDir "$moduleDir/outputs", mode: 'copy'
 
     input:
     path script
-    path mcmc_results
+    path mcmc_idata
     val outdir
-    val species
-    val config
-
 
     script:
-    def parameters = new YamlBuilder()
-    parameters(config)
     """
     #!/bin/bash
-    echo "${parameters.toString()}" > _params.yml
-    python3 ${script} --mcmc_results ${mcmc_results} --outdir "${outdir}_${mcmc_results.simpleName}" --species ${species} --config _params.yml
+    python3 ${script} --idata-path ${mcmc_idata} --output-dir "${outdir}" 
     """
 
     output:
-    path "${outdir}_${mcmc_results.simpleName}"
+    path "${outdir}"
 
 
 }
@@ -320,9 +314,11 @@ process BUNDLE_OUTPUTS {
 
     input:
     val experiment_params
-    path mcmc_chain
+    path mcmc_output
     path mcmc_corner_plot
     path mcmc_trace
+    path mcmc_idata
+    path mcmc_diagnostics
 
     script:
     def parameters = new YamlBuilder()
@@ -334,9 +330,11 @@ process BUNDLE_OUTPUTS {
     mkdir "${params.species}_${params.model.name}_${workflow.sessionId}"
     
     cp _params.yml "${params.species}_${params.model.name}_${workflow.sessionId}"
-    cp ${mcmc_chain} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    cp ${mcmc_output} "${params.species}_${params.model.name}_${workflow.sessionId}/"
     cp ${mcmc_corner_plot} "${params.species}_${params.model.name}_${workflow.sessionId}/"
     cp ${mcmc_trace} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    cp ${mcmc_idata} "${params.species}_${params.model.name}_${workflow.sessionId}/"
+    cp -r ${mcmc_diagnostics} "${params.species}_${params.model.name}_${workflow.sessionId}/"
     """
 
     output:

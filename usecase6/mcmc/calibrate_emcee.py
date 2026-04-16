@@ -7,7 +7,7 @@ import umbridge
 import argparse
 import os
 import corner
-
+import arviz as az
 
 
 class Prior:
@@ -65,12 +65,14 @@ class Prior:
         all_parameters = list(parameters)
         if calibrate_noise:
             all_parameters += noise_parameters
-
+        
         prior_names = [p["name"] for p in config]
         self.distributions = [
             Prior._distributions_from_config(config[prior_names.index(name)])
             for name in all_parameters
         ]
+
+        self.all_parameters=all_parameters
 
 
 class LogPrior:
@@ -237,16 +239,22 @@ if __name__ == "__main__":
 
     # Save results
     data_basename, ext = os.path.splitext(args.data)
-    np.savez(f"calibration_output_{model_name}_{data_basename}.npz", 
+    np.savez(f"mcmc_output.npz", 
                 trace=trace, samples=samples, lnprob=lnprob)
-    print(f"Results saved to calibration_output_{model_name}_{data_basename}.npz")
+    print(f"Results saved to mcmc_output.npz")
 
     corner_plot = corner.corner(trace, labels=[prior["name"] for prior in config["calibration"]["priors"]], show_titles=True)
-    corner_plot.savefig(f"corner_plot_{model_name}_{data_basename}")
-    print(f"Corner Plot saved to corner_plot_{model_name}_{data_basename}.png")
+    corner_plot.savefig(f"corner_plot")
+    print(f"Corner Plot saved to corner_plot.png")
 
     # Save samples as .npy file
-    np.save(f"trace_{model_name}_{data_basename}.npy", trace)
-    print(f"Samples saved to trace_{model_name}_{data_basename}.npy")
+    np.save(f"trace.npy", trace)
+    print(f"Samples saved to trace.npy")
+
+    # Idata for Diagnostics with Arviz
+    idata = az.from_emcee(sampler, var_names = prior.all_parameters)
+    idata.to_netcdf(f"mcmc_idata.nc")
+    print(f"Calibration inference data saved to mcmc_idata.nc")
+
 
 

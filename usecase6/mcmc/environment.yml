@@ -10,6 +10,9 @@ dependencies:
   - emcee
   - corner
   - tqdm
+  - arviz=0.20
+  - h5py
+  - h5netcdf
   - pip
   - pip:
     - umbridge

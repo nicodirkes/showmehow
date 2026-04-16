@@ -1,224 +1,207 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import arviz as az
-import seaborn as sns
-import yaml
+import argparse
 from pathlib import Path
 
-def setup_output_directory(path="diagnostics_assesment"):
-    output_dir = Path(path)
-    output_dir.mkdir(exist_ok=True)
-    print(f"Results will be saved to: {output_dir.absolute()}")
-    return output_dir
+import matplotlib.pyplot as plt
+import arviz as az
+import numpy as np
 
-def load_mcmc_results(filename):
-    print(f"Loading MCMC results from {filename}...")
-    data = np.load(filename)
-    trace = data['trace']
-    samples = data['samples']
-    lnprob = data['lnprob']
-    print(f"Trace shape: {trace.shape}")
-    print(f"Samples shape: {samples.shape}")
-    print(f"Log prob shape: {lnprob.shape}")
-    return trace, samples, lnprob
+# ---------------------------------------------------------------------------
+# Global matplotlib defaults
+# ---------------------------------------------------------------------------
+plt.rcParams.update({
+    "font.family": "sans-serif",
+    "font.size": 11,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.color": "#e5e5e5",
+    "grid.linewidth": 0.6,
+    "figure.dpi": 300,
+})
 
-def create_inference_data(samples, lnprob, param_names):
-    print("Converting to ArviZ InferenceData...")
-    posterior_dict = {param: samples[:, :, i] for i, param in enumerate(param_names)}
-    sample_stats_dict = {"lp": lnprob}
-    inference_data = az.from_dict(posterior=posterior_dict, sample_stats=sample_stats_dict)
-    print(f"Created InferenceData: {samples.shape[0]} chains, {samples.shape[1]} draws, {samples.shape[2]} parameters")
-    return inference_data
+N_BINS = 36
+MAX_AUTOCORR_LAG = 100
+RHAT_THRESHOLD = 1.01
+SAVE_DPI = 200
 
-def run_arviz_diagnostics(inference_data, output_dir):
-    print("\n" + "="*50)
-    print("ARVIZ CONVERGENCE DIAGNOSTICS")
-    print("="*50)
-    rhat = az.rhat(inference_data)
-    print("\nR-hat (Gelman-Rubin diagnostic):")
-    print("-" * 35)
-    for param, value in rhat.items():
-        status = "Good" if value < 1.01 else "Questionable" if value < 1.1 else "Poor"
-        print(f"{param:10}: {float(value):.4f} ({status})")
-    ess_bulk = az.ess(inference_data, method="bulk")
-    ess_tail = az.ess(inference_data, method="tail")
-    print(f"\nEffective Sample Size:")
-    print("-" * 40)
-    print(f"{'Parameter':<12} {'Bulk ESS':<10} {'Tail ESS':<10} {'Status'}")
-    print("-" * 40)
-    for param in inference_data.posterior.data_vars:
-        bulk_val = float(ess_bulk[param])
-        tail_val = float(ess_tail[param])
-        min_ess = min(bulk_val, tail_val)
-        status = "Good" if min_ess > 400 else "Low" if min_ess > 100 else "Very Low"
-        print(f"{param:<12} {bulk_val:<10.0f} {tail_val:<10.0f} {status}")
-    mcse = az.mcse(inference_data)
-    print(f"\nMonte Carlo Standard Error:")
-    print("-" * 30)
-    for param, value in mcse.items():
-        print(f"{param:10}: {float(value):.6f}")
-    summary_df = pd.DataFrame({
-        'rhat': [float(rhat[param]) for param in rhat],
-        'ess_bulk': [float(ess_bulk[param]) for param in ess_bulk],
-        'ess_tail': [float(ess_tail[param]) for param in ess_tail],
-        'mcse': [float(mcse[param]) for param in mcse]
-    }, index=list(rhat.keys()))
-    summary_df.to_csv(output_dir / "convergence_diagnostics.csv")
-    print(f"\nDiagnostics saved to {output_dir / 'convergence_diagnostics.csv'}")
-    return rhat, ess_bulk, ess_tail, mcse
+TRACE_COLOR = '#8cc5e3'
+LABEL_BBOX = dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='none')
 
-def create_arviz_plots(inference_data, species, output_dir):
-    print("\nCreating ArviZ diagnostic plots...")
-    sns.set_theme(style="darkgrid", palette="deep")
-    az.style.use("arviz-darkgrid")
-    print("- Creating trace plots...")
-    az.plot_trace(inference_data, figsize=(12, 8))
-    plt.suptitle(f"{species}: - MCMC Trace Plots", fontsize=14)
+# Per-subplot sizes (width, height) in inches.
+# Trace rows are wide and short (time series needs horizontal space).
+# Autocorr is near-square (symmetric lag axis).
+# Posteriors are wider than tall (histogram).
+TRACE_SUBPLOT_SIZE = (5.0, 2.5)
+AUTOCORR_SUBPLOT_SIZE = (3.5, 3.0)
+POSTERIOR_SUBPLOT_SIZE = (5.0, 4.0)
+
+
+
+
+
+def run_quantitative_diagnostics(idata, param_labels, output_dir=None):
+    """
+    Write R-hat and ESS convergence diagnostics to a CSV file.
+
+    Parameters
+    ----------
+    idata : arviz.InferenceData
+    param_labels : dict
+        Maps parameter names to display labels used as the CSV row index.
+    output_dir : str or Path, optional
+        Directory for convergence_diagnostics.csv. Defaults to current directory.
+    """
+    param_names = list(param_labels)
+    summary = az.summary(idata, var_names=param_names)
+    display = summary[["mean", "sd", "ess_bulk", "ess_tail", "r_hat"]].copy()
+    display["converged"] = display["r_hat"].apply(
+        lambda x: "PASS" if x <= RHAT_THRESHOLD else "FAIL"
+    )
+
+    # Use human-readable display labels as the row index
+    display.index = [param_labels[p] for p in display.index]
+    display.index.name = "parameter"
+
+    out = Path(output_dir) if output_dir is not None else Path(".")
+    out.mkdir(parents=True, exist_ok=True)
+    csv_path = out / "convergence_diagnostics.csv"
+    display.to_csv(csv_path, float_format="%.6g")
+
+
+def _make_subplot_grid(n_params, n_cols, subplot_size):
+    """Create a subplot grid scaled by per-subplot size. Returns flattened axes."""
+    n_cols = min(n_cols, n_params)
+    n_rows = int(np.ceil(n_params / n_cols))
+    figsize = (n_cols * subplot_size[0], n_rows * subplot_size[1])
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    axes_flat = np.array(axes).flatten()
+    for ax in axes_flat[n_params:]:
+        ax.axis('off')
+    return fig, axes_flat, n_rows, n_cols
+
+
+def _save_figure(fig, output_dir, filename):
     plt.tight_layout()
-    plt.savefig(output_dir / "trace_plots.png", dpi=150, bbox_inches='tight')
-    print("- Creating posterior plots...")
-    az.plot_posterior(inference_data, figsize=(12, 4), hdi_prob=0.94)
-    plt.suptitle(f"{species}: - Posterior Distributions", fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "posterior_distributions.png", dpi=150, bbox_inches='tight')
-    print("- Creating pair plot...")
-    az.plot_pair(inference_data, kind="scatter", marginals=True, figsize=(10, 10))
-    plt.suptitle(f"{species}: - Parameter Correlations", fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "parameter_correlations.png", dpi=150, bbox_inches='tight')
-    print("- Creating autocorrelation plots...")
-    az.plot_autocorr(inference_data, figsize=(12, 4))
-    plt.suptitle(f"{species}: - Autocorrelation Functions", fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "autocorrelation.png", dpi=150, bbox_inches='tight')
-    print("- Creating rank plots...")
-    az.plot_rank(inference_data, figsize=(12, 4))
-    plt.suptitle(f"{species}: - Rank Plots", fontsize=14)
-    plt.tight_layout()
-    plt.savefig(output_dir / "rank_plots.png", dpi=150, bbox_inches='tight')
-    try:
-        print("- Creating energy plot...")
-        az.plot_energy(inference_data, figsize=(8, 6))
-        plt.title("Energy Plot")
-        plt.tight_layout()
-        plt.savefig(output_dir / "energy_plot.png", dpi=150, bbox_inches='tight')
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_dir / filename, dpi=SAVE_DPI, bbox_inches='tight')
 
-    except Exception as e:
-        print(f"  Energy plot skipped: {e}")
 
-def create_summary_table(inference_data, trace, param_names, output_dir):
-    print("\nCreating summary statistics...")
-    summary = az.summary(inference_data, round_to=4)
-    print("\n" + "="*70)
-    print("POSTERIOR SUMMARY STATISTICS")
-    print("="*70)
-    print(summary)
-    summary.to_csv(output_dir / "posterior_summary_arviz.csv")
-    df = pd.DataFrame(trace, columns=param_names)
-    custom_summary = {
-        param: {
-            'mean': df[param].mean(),
-            'std': df[param].std(),
-            'min': df[param].min(),
-            'max': df[param].max(),
-            'q05': df[param].quantile(0.05),
-            'q25': df[param].quantile(0.25),
-            'q50': df[param].quantile(0.50),
-            'q75': df[param].quantile(0.75),
-            'q95': df[param].quantile(0.95)
-        }
-        for param in param_names
-    }
-    custom_df = pd.DataFrame(custom_summary).T
-    custom_df.to_csv(output_dir / "posterior_summary_detailed.csv")
-    corr_matrix = df.corr()
-    corr_matrix.to_csv(output_dir / "parameter_correlations.csv")
-    print(f"\nCorrelation Matrix:")
-    print("-" * 20)
-    print(corr_matrix.round(3))
-    return summary, custom_df, corr_matrix
+def _add_panel_label(ax, idx):
+    ax.text(0.03, 0.95, f'({chr(97 + idx)})',
+            transform=ax.transAxes, fontsize=12,
+            verticalalignment='top', bbox=LABEL_BBOX)
 
-def save_samples(trace, param_names, output_dir):
-    df_samples = pd.DataFrame(trace, columns=param_names)
-    df_samples.to_csv(output_dir / "posterior_samples.csv", index=False)
-    print(f"Posterior samples saved to {output_dir / 'posterior_samples.csv'}")
 
-def assess_convergence(rhat, ess_bulk, ess_tail):
-    print("\n" + "="*50)
-    print("CONVERGENCE ASSESSMENT")
-    print("="*50)
-    max_rhat = max(float(rhat[param]) for param in rhat)
-    min_ess_bulk = min(float(ess_bulk[param]) for param in ess_bulk)
-    min_ess_tail = min(float(ess_tail[param]) for param in ess_tail)
-    min_ess = min(min_ess_bulk, min_ess_tail)
-    print(f"Max R-hat: {max_rhat:.4f}")
-    print(f"Min Bulk ESS: {min_ess_bulk:.0f}")
-    print(f"Min Tail ESS: {min_ess_tail:.0f}")
-    if max_rhat < 1.01 and min_ess > 400:
-        assessment, color, recommendation = "EXCELLENT", "✓", "Chains have converged very well. Results are reliable."
-    elif max_rhat < 1.1 and min_ess > 100:
-        assessment, color, recommendation = "GOOD", "✓", "Chains show good convergence. Results are trustworthy."
-    elif max_rhat < 1.2 and min_ess > 50:
-        assessment, color, recommendation = "ACCEPTABLE", "⚠", "Chains show reasonable convergence, but consider longer runs."
-    else:
-        assessment, color, recommendation = "POOR", "✗", "Convergence issues detected. Increase burn-in and sampling steps."
-    print(f"\n{color} OVERALL ASSESSMENT: {assessment}")
-    print(f"Recommendation: {recommendation}")
-    if assessment in ["ACCEPTABLE", "POOR"]:
-        print("\nSuggestions to improve:")
-        print("- Increase number of steps (--nsteps)")
-        print("- Increase burn-in period (--nburn)")
-        print("- Use more walkers (--nwalkers)")
-        print("- Check parameter identifiability")
-    return assessment
+def _plot_trace(idata, param_labels, output_dir):
+    param_names = list(param_labels)
+    n_params = len(param_names)
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description='MCMC Diagnostics')
-    parser.add_argument('--mcmc_results', help='.npz file with mcmc_results')
-    parser.add_argument('--outdir', help='ouput_directory for diagnostics assesment')
-    parser.add_argument('--species')
-    parser.add_argument('--config')
-    args = parser.parse_args()
+    w, h = TRACE_SUBPLOT_SIZE
+    fig, axes = plt.subplots(n_params, 2, figsize=(2 * w, n_params * h))
+    if n_params == 1:
+        axes = axes.reshape(1, -1)
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    az.plot_trace(
+        idata,
+        var_names=param_names,
+        axes=axes,
+        trace_kwargs={"color": TRACE_COLOR, "alpha": 1.0, "linewidth": 0.8},
+        hist_kwargs={"color": TRACE_COLOR, "edgecolor": "none", "bins": N_BINS, "alpha": 1.0,},
+        compact=False,
+    )
+
+    for i, (param, label) in enumerate(param_labels.items()):
+        axes[i, 0].set_title('')
+        axes[i, 1].set_title('')
+        axes[i, 0].set_ylabel(label)
+        # _add_panel_label(axes[i, 0], i)
+
+    axes[-1, 0].set_xlabel('Density')
+    axes[-1, 1].set_xlabel('Draw')
+    _save_figure(fig, output_dir, 'trace.png')
+
+
+def _plot_autocorr(idata, param_labels, output_dir):
+    param_names = list(param_labels)
+    n_params = len(param_names)
+    fig, axes_flat, _, n_cols = _make_subplot_grid(n_params, n_cols=3,
+                                                   subplot_size=AUTOCORR_SUBPLOT_SIZE)
+
+    az.plot_autocorr(
+        idata, var_names=param_names,
+        max_lag=MAX_AUTOCORR_LAG, combined=True,
+        ax=axes_flat[:n_params],
+    )
+
+    for idx, (param, label) in enumerate(param_labels.items()):
+        ax = axes_flat[idx]
+        ax.set_title('')
+        ax.axhline(0, color='dimgray', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.set_ylim(-0.1, 1.05)
+        ax.text(0.5, 1.02, label, transform=ax.transAxes, fontsize=10,
+                verticalalignment='bottom', horizontalalignment='center')
+        # _add_panel_label(ax, idx)
+        if idx % n_cols == 0:
+            ax.set_ylabel('Autocorrelation')
+        if idx // n_cols == (n_params - 1) // n_cols:
+            ax.set_xlabel('Lag')
+
+    _save_figure(fig, output_dir, 'autocorr.png')
+
+
+def _plot_posteriors(idata, param_labels, output_dir):
+    param_names = list(param_labels)
+    n_params = len(param_names)
+    fig, axes_flat, _, _ = _make_subplot_grid(n_params, n_cols=2,
+                                              subplot_size=POSTERIOR_SUBPLOT_SIZE)
+
+    for idx, (param, label) in enumerate(param_labels.items()):
+        ax = axes_flat[idx]
+        ax.hist(idata.posterior[param].values.flatten(),
+                bins=N_BINS, color=TRACE_COLOR, edgecolor='none')
+        ax.set_xlabel(label)
+        ax.set_ylabel('Frequency')
+        # _add_panel_label(ax, idx)
+
+    _save_figure(fig, output_dir, 'posteriors.png')
+
+
+def run_diagnostics(idata, param_labels=None, output_dir=None):
+    """
+    Create MCMC diagnostics. Qualitative plots and Quantitavie metrics 
+
+    Parameters
+    ----------
+    idata : arviz.InferenceData
+    param_labels : dict, optional
+        Maps parameter names to display labels.
+        Example: mu and xi
+    output_dir : str or Path, optional
+        Directory to save figures as PNG. Filenames are fixed:
+        trace.png, autocorr.png, posteriors.png.
+    """
+    if param_labels is None:
+        param_labels = {p: p for p in idata.posterior.data_vars}
+
+    out = Path(output_dir) if output_dir is not None else None
+
+
     
-    param_names = config["calibration"]["parameters"]
-    if config["calibration"]["calibrate_noise"]==True:
-        param_names += config["calibration"]["noise_parameters"]
-
-
-    try:
-        output_dir = setup_output_directory(args.outdir)
-        trace, samples, lnprob = load_mcmc_results(args.mcmc_results)
-        inference_data = create_inference_data(samples, lnprob, param_names)
-        rhat, ess_bulk, ess_tail, mcse = run_arviz_diagnostics(inference_data, output_dir)
-        create_arviz_plots(inference_data, args.species, output_dir)
-        create_summary_table(inference_data, trace, param_names, output_dir)
-        save_samples(trace, param_names, output_dir)
-        assessment = assess_convergence(rhat, ess_bulk, ess_tail)
-        assessment_text = f"""
-        MCMC Convergence Assessment
-        ==========================
-        Overall Assessment: {assessment}
-        Max R-hat: {max(float(rhat[param]) for param in rhat):.4f}
-        Min Bulk ESS: {min(float(ess_bulk[param]) for param in ess_bulk):.0f}
-        Min Tail ESS: {min(float(ess_tail[param]) for param in ess_tail):.0f}
-
-        Target values:
-        - R-hat < 1.01 (excellent) or < 1.1 (good)
-        - ESS > 400 (excellent) or > 100 (acceptable)
-        """
-        with open(output_dir / "assessment.txt", "w") as f:
-            f.write(assessment_text)
-        print(f"\nAll diagnostics complete! Results saved in: {output_dir.absolute()}")
-    except FileNotFoundError:
-        print("Make sure you've run the MCMC process first.")
-    except Exception as e:
-        print(f"Error: {e}")
-        raise
+    _plot_trace(idata, param_labels, out)
+    _plot_autocorr(idata, param_labels, out)
+    _plot_posteriors(idata, param_labels, out)
+    run_quantitative_diagnostics(idata, param_labels, out)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run MCMC diagnostics on a NetCDF inference data file.")
+    parser.add_argument("--idata-path", type=Path, help="Path to the .nc InferenceData file.")
+    parser.add_argument("--output-dir", type=Path, default=Path("."), help="Directory to write outputs (default: current directory).")
+    args = parser.parse_args()
+
+    idata = az.from_netcdf(args.idata_path)
+    run_diagnostics(idata, output_dir=args.output_dir)
