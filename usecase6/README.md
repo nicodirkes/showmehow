@@ -7,7 +7,7 @@ Blum, C., Steinseifer, U. and Neidlin, M. (2025), Toward Uncertainty-Aware Hemol
 This usecase shows you how to ..
 
 ## Running the Workflow
-We use `nextflow` to run this usecase which is specified through the SHOWME.how file. 
+We use `nextflow` to run this usecase which is specified through the main.nf file. 
 
 1. Create and activate the conda environment
 ```
@@ -18,5 +18,5 @@ conda activate showmehow
 2. Run the workflow
 
 ```
-nextflow run SHOWME.how -params-file params.yml
+nextflow run main.nf -params-file params.yml
 ```
