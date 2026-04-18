@@ -6,7 +6,7 @@ workflow {
     def species = params.species
     def model = params.model.name
     def use_model_jl = params.model.use_julia
-    def umbridge_port = Math.abs( new Random().nextInt() % (49152 - 16384) ) + 16384 // Selecting random ephemeral port for umbridge
+    def umbridge_port = Math.abs( new Random().nextInt() % (31767 - 16384) ) + 16384 // Safe range [16384, 31767], excludes kernel ephemeral [32768, 60999]
 
     PULL_DATA_COSCINE (
         token_file = file("$moduleDir/pull_data/.token.txt"),
@@ -171,8 +171,9 @@ process SERVE_MODEL {
     # Start model server
     python ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
     SERVER_PID=\$!
+    trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT INT TERM
     echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
-    
+
     # Wait for model server to start 
     while ! bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; do
         sleep 1
@@ -191,7 +192,7 @@ process SERVE_MODEL {
     done
 
     # Stop the model server when the signal is received
-    kill \$SERVER_PID
+    kill \$SERVER_PID 2>/dev/null || true
     echo "Model server on port \$UMBRIDGE_PORT stopped."
 
     """
@@ -227,9 +228,10 @@ process SERVE_MODEL_JL {
     # Start model server
     julia ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
     SERVER_PID=\$!
+    trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT INT TERM
     echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
-    
-    # Wait for model server to start 
+
+    # Wait for model server to start
     while ! bash -c "echo > /dev/tcp/localhost/\$UMBRIDGE_PORT" 2>/dev/null; do
         sleep 1
     done
@@ -247,7 +249,7 @@ process SERVE_MODEL_JL {
     done
 
     # Stop the model server when the signal is received
-    kill \$SERVER_PID
+    kill \$SERVER_PID 2>/dev/null || true
     echo "Model server on port \$UMBRIDGE_PORT stopped."
 
     """
