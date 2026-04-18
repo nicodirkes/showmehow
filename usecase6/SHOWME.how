@@ -69,6 +69,11 @@ workflow {
         mcmc_diagnostics = RUN_DIAGNOSTICS.out
     )
 
+    GENERATE_REPORT(
+        script = file("$moduleDir/report/generate_report.py"),
+        bundle_dir = BUNDLE_OUTPUTS.out.bundle_dir
+    )
+
 }
 
 process PULL_DATA_COSCINE {
@@ -338,5 +343,26 @@ process BUNDLE_OUTPUTS {
     """
 
     output:
-    path "${params.species}_${params.model.name}_${workflow.sessionId}"
+    path "${params.species}_${params.model.name}_${workflow.sessionId}", emit: bundle_dir
+}
+
+
+process GENERATE_REPORT {
+    conda "$moduleDir/report/environment.yml"
+    publishDir "$moduleDir/outputs/${bundle_dir.name}", mode: 'copy'
+
+    input:
+    path script
+    path bundle_dir
+
+    output:
+    path "report.pdf"
+
+    script:
+    """
+    #!/bin/bash
+    python3 ${script} \\
+        --bundle-dir ${bundle_dir} \\
+        --output report.pdf
+    """
 }
