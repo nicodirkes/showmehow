@@ -2,7 +2,5 @@
 *work
 *.sif
 *outputs*
-*report*
-*timeline*
 .vscode
 __pycache__
