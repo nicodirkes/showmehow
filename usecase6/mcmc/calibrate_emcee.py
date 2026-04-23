@@ -110,11 +110,12 @@ class LogLikelihood:
 
     def eval(self, parameters) -> float:
         if self.calibrate_noise:
-            noise_sigma = np.asarray(parameters[-self.n_noise_parameters:])
             model_parameters = parameters[:-self.n_noise_parameters]
+            noise_sigma = np.asarray(parameters[-self.n_noise_parameters:])
             if any(sigma <= 0.0 for sigma in noise_sigma):
                 return -np.inf
         else:
+            model_parameters = parameters
             noise_sigma = self.noise_sigma
 
         try:
