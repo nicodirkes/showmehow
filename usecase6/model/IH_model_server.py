@@ -79,6 +79,8 @@ def parse_arguments():
                        help='Data file path')
     parser.add_argument('--port', type=int, default=49152,
                        help='Server port')
+    parser.add_argument('--n_workers', type=int, default=1,
+                       help='Number of worker threads for the UMBridge server')
     return parser.parse_args()
 
 def main():
@@ -86,8 +88,8 @@ def main():
     name = args.name
     data_file = args.data
     port = args.port
+    max_workers = args.n_workers
 
-    
     print(f"Starting UMBridge server on port {port}")
     print(f"Data file: {data_file}")
     print(f"Model: {name}")
@@ -100,7 +102,7 @@ def main():
     print(f"Successfully created model: {model.name}")
     
     # Serve the model
-    umbridge.serve_models([model], port)
+    umbridge.serve_models([model], port, max_workers=max_workers)
 
 if __name__ == "__main__":
     main()
