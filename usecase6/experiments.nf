@@ -1,15 +1,15 @@
 #!/usr/bin/env nextflow
-include { bpc_hemolysis } from './main.nf'
+include { bpc_hemolysis; toYaml } from './main.nf'
 
 workflow {
     config = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text)
 
     exp_base_dir  = "$projectDir/outputs/experiments/${workflow.start}_${workflow.sessionId}".toString()
-    params_yaml   = new groovy.yaml.YamlBuilder().tap { it(config) }.toString()
+    params_yaml   = toYaml(config)
 
     experiments = GENERATE_EXPERIMENTS(
-        script      = file("$projectDir/experiments/generate_experiments.py"),
-        params_yaml = params_yaml
+        file("$projectDir/experiments/generate_experiments.py"),
+        params_yaml
     ).flatten()
 
     bpc_hemolysis(experiments, exp_base_dir)
