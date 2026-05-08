@@ -1,17 +1,44 @@
 #!/usr/bin/env nextflow
-import groovy.yaml.YamlBuilder
 
-// ---------------------------------------------------------------------------
-// Global resource computation — fixed for the entire run.
-// Reads n_workers from the experiment config and derives maxForks so that
-// concurrent (model + calibration) pairs never exceed available CPUs.
-// ---------------------------------------------------------------------------
-def _nModel    = 1
-def _nCalib    = 1
-def _cfg = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text) as Map
-    _nModel = (_cfg.model?.n_workers       ?: 1) as int
-    _nCalib = (_cfg.calibration?.n_workers ?: 1) as int
-_maxForks = Math.max(1, (int)(Runtime.runtime.availableProcessors() / (_nModel + _nCalib)))
+def toYaml(data) {
+    def yb = new groovy.yaml.YamlBuilder()
+    yb.call(data)
+    return yb.toString()
+}
+
+def _nModel() {
+    try {
+        def cfg = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text) as Map
+        return (cfg.model?.n_workers ?: 1) as int
+    } catch (Exception _ignored) { return 1 }
+}
+def _nCalib() {
+    try {
+        def cfg = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text) as Map
+        return (cfg.calibration?.n_workers ?: 1) as int
+    } catch (Exception _ignored) { return 1 }
+}
+
+def _workflowMeta(f) {
+    def cfg = new groovy.yaml.YamlSlurper().parseText(f.text) as Map
+    def key = cfg.containsKey('experiment_hash') ? cfg.experiment_hash : workflow.sessionId
+    def bundle_name = "${cfg.species}_${cfg.model.name}_${key}".toString()
+    return [key, cfg, bundle_name, toYaml(cfg)]
+}
+
+def _addPort(row) {
+    return [row[0], row[1], row[2], row[3], row[4], row[5], Math.abs(new Random().nextInt() % (31767 - 16384)) + 16384]
+}
+
+def _modelInputs(row) {
+    Thread.sleep(2000)
+    return [row[0], row[1].model.name, row[4], row[6], row[5], row[1].model.get('n_workers', 1), row[1].model.get('use_julia', false)]
+}
+
+def _mcmcInputs(row) {
+    Thread.sleep(2000)
+    return [row[0], row[3], row[4], row[5], row[1].calibration.get('n_workers', 1)]
+}
 
 workflow bpc_hemolysis {
 
@@ -21,27 +48,21 @@ workflow bpc_hemolysis {
 
     main:
     // Single source of truth: all per-experiment metadata derived once from the config
-    workflow_meta = config_file.map { f ->
-        def cfg = new groovy.yaml.YamlSlurper().parseText(f.text) as Map
-        def key = cfg.containsKey('experiment_hash') ? cfg.experiment_hash : workflow.sessionId
-        def bundle_name = "${cfg.species}_${cfg.model.name}_${key}".toString()
-        def params_yaml = new YamlBuilder().tap { it(cfg) }.toString()
-        [key, cfg, bundle_name, params_yaml]
-    }
+    workflow_meta = config_file.map { f -> _workflowMeta(f) }
     // workflow_meta: [key, cfg, bundle_name, params_yaml]
 
     PULL_DATA_COSCINE(
-        token_file    = file("$moduleDir/pull_data/.token.txt"),
-        project_name  = "showmehow_usecase5",
-        resource_name = "Field Data"
+        file("$moduleDir/pull_data/.token.txt"),
+        "showmehow_usecase5",
+        "Field Data"
     )
 
     PREPROCESS_DATA(
-        script  = file("$moduleDir/preprocessing/preprocessing.py"),
-        prefix  = "data_ding_",
-        species = workflow_meta.map { it[1].species },
-        indir   = PULL_DATA_COSCINE.out,
-        key     = workflow_meta.map { it[0] }
+        file("$moduleDir/preprocessing/preprocessing.py"),
+        "data_ding_",
+        workflow_meta.map { row -> row[1].species },
+        PULL_DATA_COSCINE.out,
+        workflow_meta.map { row -> row[0] }
     )
 
     SETUP_UM_IPC(
@@ -53,54 +74,46 @@ workflow bpc_hemolysis {
         .join(PREPROCESS_DATA.out.data)
         .join(SETUP_UM_IPC.out)
         .combine(SETUP_UM_IPC.out.count())
-        .map { it[0..-2] }
+        .map { row -> row[0..-2] }
     // experiment_config: [key, cfg, bundle_name, params_yaml, data, comm]
 
-    // Single multiMap subscription on experiment_config — one pass, two sub-channels.
-    // Each is mapped to its final process-input format before sorting, so no extra
-    // channel derivation is needed after the sort.
-    experiment_config.multiMap { key, cfg, bundle, yaml, data, comm ->
-        def port = Math.abs(new Random().nextInt() % (31767 - 16384)) + 16384
-        model: [key, cfg.model.name, data, port, comm, cfg.model.get('n_workers', 1), cfg.model.get('use_julia', false)]
-        mcmc:  [key, yaml, data, comm, cfg.calibration.get('n_workers', 1)]
-    }.set { experiments }
+    // experiment_config items: [key, cfg, bundle_name, params_yaml, data, comm]
+    // Fan out to model and mcmc channels via separate maps (multiMap uses labeled-expression
+    // DSL that is broken in Nextflow 26.04).
+    experiment = experiment_config.map { row -> _addPort(row) }
+    // experiment items: [key, cfg, bundle_name, params_yaml, data, comm, port]
 
-    mcmc_inputs = experiments.mcmc
-        .toSortedList { a, b -> a[0] <=> b[0] }
-        .flatMap { it }
-        .map { item -> Thread.sleep(2000); item }  // necessary to avoid race condition in task scheduling
+    model_inputs = experiment.map { row -> _modelInputs(row) }
+    // model_inputs items: [key, name, data, port, comm, n_workers, use_julia]
 
-    experiments.model
-        .toSortedList { a, b -> a[0] <=> b[0] }
-        .flatMap { it }
-        .map { item -> Thread.sleep(2000); item }  // necessary to avoid race condition in task scheduling
-        .branch {
-            jl: it[6] == true
-            py: true
-        }
-        .set { model_branches }
+    mcmc_inputs = experiment.map { row -> _mcmcInputs(row) }
+    // mcmc_inputs items: [key, params_yaml, data, comm, n_workers]
 
     SERVE_MODEL_JL(
-        script = file("$moduleDir/model_julia/IH_model_server.jl"),
-        src    = file("$moduleDir/model_julia/src"),
-        inputs = model_branches.jl.map { key, name, data, port, comm, n_workers, use_julia -> [key, name, data, port, comm] }
+        file("$moduleDir/model_julia/IH_model_server.jl"),
+        file("$moduleDir/model_julia/src"),
+        model_inputs
+            .filter { row -> row[6] }
+            .map { row -> [row[0], row[1], row[2], row[3], row[4]] }
     )
 
-    SERVE_MODEL(
-        script = file("$moduleDir/model/IH_model_server.py"),
-        src    = file("$moduleDir/model/src"),
-        inputs = model_branches.py.map { key, name, data, port, comm, n_workers, use_julia -> [key, name, data, port, comm, n_workers] }
+    SERVE_MODEL_PY(
+        file("$moduleDir/model/IH_model_server.py"),
+        file("$moduleDir/model/src"),
+        model_inputs
+            .filter { row -> !row[6] }
+            .map { row -> [row[0], row[1], row[2], row[3], row[4], row[5]] }
     )
 
     MCMC_CALIBRATION(
-        script      = file("$moduleDir/mcmc/calibrate_emcee.py"),
-        inputs = mcmc_inputs
+        file("$moduleDir/mcmc/calibrate_emcee.py"),
+        mcmc_inputs
     )
 
     RUN_DIAGNOSTICS(
-        script     = file("$moduleDir/diagnostics/run_diagnostics.py"),
-        mcmc_idata = MCMC_CALIBRATION.out.mcmc_idata,
-        outdir     = "diagnostics",
+        file("$moduleDir/diagnostics/run_diagnostics.py"),
+        MCMC_CALIBRATION.out.mcmc_idata,
+        "diagnostics"
     )
 
     // Join workflow_meta with all keyed outputs — guaranteed per-experiment pairing into BUNDLE_OUTPUTS
@@ -113,20 +126,20 @@ workflow bpc_hemolysis {
     // bundle_inputs: [key, cfg, bundle_name, params_yaml, mcmc_output, mcmc_corner_plot, mcmc_trace, mcmc_idata, diagnostics]
 
     BUNDLE_OUTPUTS(
-        output_base_dir  = output_base_dir,
-        bundle_name      = bundle_inputs.map { it[2] },
-        params_yaml      = bundle_inputs.map { it[3] },
-        mcmc_output      = bundle_inputs.map { it[4] },
-        mcmc_corner_plot = bundle_inputs.map { it[5] },
-        mcmc_trace       = bundle_inputs.map { it[6] },
-        mcmc_idata       = bundle_inputs.map { it[7] },
-        mcmc_diagnostics = bundle_inputs.map { it[8] }
+        output_base_dir,
+        bundle_inputs.map { row -> row[2] },
+        bundle_inputs.map { row -> row[3] },
+        bundle_inputs.map { row -> row[4] },
+        bundle_inputs.map { row -> row[5] },
+        bundle_inputs.map { row -> row[6] },
+        bundle_inputs.map { row -> row[7] },
+        bundle_inputs.map { row -> row[8] }
     )
 
     GENERATE_REPORT(
-        script          = file("$moduleDir/report/generate_report.py"),
-        output_base_dir = output_base_dir,
-        bundle_dir      = BUNDLE_OUTPUTS.out.bundle_dir
+        file("$moduleDir/report/generate_report.py"),
+        output_base_dir,
+        BUNDLE_OUTPUTS.out.bundle_dir
     )
 
     emit:
@@ -203,13 +216,12 @@ process SETUP_UM_IPC {
     """
 }
 
-process SERVE_MODEL {
+process SERVE_MODEL_PY {
     conda "$moduleDir/model/environment.yml"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
-    cpus     { _nModel }
-    maxForks _maxForks
+    cpus { _nModel() }
 
     input:
     path script
@@ -315,8 +327,8 @@ process SERVE_MODEL_JL {
 process MCMC_CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
-    cpus     { _nCalib }
-    maxForks _maxForks
+    cpus     { _nCalib() }
+    maxForks { _maxForks() }
 
     input:
     path script
@@ -367,7 +379,7 @@ process RUN_DIAGNOSTICS {
 }
 
 process BUNDLE_OUTPUTS {
-    publishDir "${output_base_dir}", mode: 'copy'
+    publishDir { output_base_dir }, mode: 'copy'
 
     input:
     val output_base_dir
@@ -401,7 +413,7 @@ process BUNDLE_OUTPUTS {
 
 process GENERATE_REPORT {
     conda "$moduleDir/report/environment.yml"
-    publishDir "${output_base_dir}/${bundle_dir.name}", mode: 'copy'
+    publishDir { "${output_base_dir}/${bundle_dir.name}" }, mode: 'copy'
 
     input:
     path script
