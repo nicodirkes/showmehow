@@ -1,12 +1,22 @@
 #!/usr/bin/env nextflow
 import groovy.yaml.YamlBuilder
 
+// ---------------------------------------------------------------------------
+// Global resource computation — fixed for the entire run.
+// Reads n_workers from the experiment config and derives maxForks so that
+// concurrent (model + calibration) pairs never exceed available CPUs.
+// ---------------------------------------------------------------------------
+def _nModel    = 1
+def _nCalib    = 1
+def _cfg = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text) as Map
+    _nModel = (_cfg.model?.n_workers       ?: 1) as int
+    _nCalib = (_cfg.calibration?.n_workers ?: 1) as int
+_maxForks = Math.max(1, (int)(Runtime.runtime.availableProcessors() / (_nModel + _nCalib)))
 
 workflow bpc_hemolysis {
 
     take:
     config_file
-    use_julia
     output_base_dir
 
     main:
@@ -38,39 +48,53 @@ workflow bpc_hemolysis {
         PREPROCESS_DATA.out.done
     )
 
-    // Join workflow_meta with [key, data] and [key, comm] — guaranteed per-experiment pairing
-    model_config = workflow_meta
+    // Join workflow_meta with [key, data] and [key, comm] — guaranteed per-experiment pairing.
+    experiment_config = workflow_meta
         .join(PREPROCESS_DATA.out.data)
         .join(SETUP_UM_IPC.out)
-    // model_config: [key, cfg, bundle_name, params_yaml, data, comm]
+        .combine(SETUP_UM_IPC.out.count())
+        .map { it[0..-2] }
+    // experiment_config: [key, cfg, bundle_name, params_yaml, data, comm]
 
-    if (use_julia) {
-        SERVE_MODEL_JL(
-            script        = file("$moduleDir/model_julia/IH_model_server.jl"),
-            src           = file("$moduleDir/model_julia/src"),
-            name          = model_config.map { it[1].model.name },
-            data          = model_config.map { it[4] },
-            umbridge_port = model_config.map { Math.abs(new Random().nextInt() % (31767 - 16384)) + 16384 },
-            um_highway    = model_config.map { it[5] }
-        )
-    }
-    else {
-        SERVE_MODEL(
-            script        = file("$moduleDir/model/IH_model_server.py"),
-            src           = file("$moduleDir/model/src"),
-            name          = model_config.map { it[1].model.name },
-            data          = model_config.map { it[4] },
-            umbridge_port = model_config.map { Math.abs(new Random().nextInt() % (31767 - 16384)) + 16384 },
-            um_highway    = model_config.map { it[5] }
-        )
-    }
+    // Single multiMap subscription on experiment_config — one pass, two sub-channels.
+    // Each is mapped to its final process-input format before sorting, so no extra
+    // channel derivation is needed after the sort.
+    experiment_config.multiMap { key, cfg, bundle, yaml, data, comm ->
+        def port = Math.abs(new Random().nextInt() % (31767 - 16384)) + 16384
+        model: [key, cfg.model.name, data, port, comm, cfg.model.get('n_workers', 1), cfg.model.get('use_julia', false)]
+        mcmc:  [key, yaml, data, comm, cfg.calibration.get('n_workers', 1)]
+    }.set { experiments }
+
+    mcmc_inputs = experiments.mcmc
+        .toSortedList { a, b -> a[0] <=> b[0] }
+        .flatMap { it }
+        .map { item -> Thread.sleep(2000); item }  // necessary to avoid race condition in task scheduling
+
+    experiments.model
+        .toSortedList { a, b -> a[0] <=> b[0] }
+        .flatMap { it }
+        .map { item -> Thread.sleep(2000); item }  // necessary to avoid race condition in task scheduling
+        .branch {
+            jl: it[6] == true
+            py: true
+        }
+        .set { model_branches }
+
+    SERVE_MODEL_JL(
+        script = file("$moduleDir/model_julia/IH_model_server.jl"),
+        src    = file("$moduleDir/model_julia/src"),
+        inputs = model_branches.jl.map { key, name, data, port, comm, n_workers, use_julia -> [key, name, data, port, comm] }
+    )
+
+    SERVE_MODEL(
+        script = file("$moduleDir/model/IH_model_server.py"),
+        src    = file("$moduleDir/model/src"),
+        inputs = model_branches.py.map { key, name, data, port, comm, n_workers, use_julia -> [key, name, data, port, comm, n_workers] }
+    )
 
     MCMC_CALIBRATION(
         script      = file("$moduleDir/mcmc/calibrate_emcee.py"),
-        key         = model_config.map { it[0] },
-        params_yaml = model_config.map { it[3] },
-        data        = model_config.map { it[4] },
-        um_highway  = model_config.map { it[5] }
+        inputs = mcmc_inputs
     )
 
     RUN_DIAGNOSTICS(
@@ -184,14 +208,13 @@ process SERVE_MODEL {
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
+    cpus     { _nModel }
+    maxForks _maxForks
 
     input:
     path script
     path src
-    val name
-    path data
-    val umbridge_port
-    path um_highway
+    tuple val(key), val(name), path(data), val(umbridge_port), path(um_highway), val(n_workers)
 
     script:
     """
@@ -205,9 +228,9 @@ process SERVE_MODEL {
     fi
 
     # Start model server
-    python ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
+    python ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT --n_workers ${n_workers} &
     SERVER_PID=\$!
-    trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT INT TERM
+    trap 'kill \$SERVER_PID 2>/dev/null || true; rm -f $um_highway/model_info/READY $um_highway/umbridge_port/* $um_highway/uq_info/DONE' EXIT INT TERM
     echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
 
     # Wait for model server to start 
@@ -235,20 +258,18 @@ process SERVE_MODEL {
 }
 
 process SERVE_MODEL_JL {
-    container "bpc_hemolysis/model_julia" 
+    container "bpc_hemolysis/model_julia"
     containerOptions "-p ${umbridge_port+100*(task.attempt-1)}:${umbridge_port+100*(task.attempt-1)}"
     // container "file://$moduleDir/model_julia/container.sif"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
+    maxForks 1
 
     input:
     path script
     path src
-    val name
-    path data
-    val umbridge_port
-    path um_highway
+    tuple val(key), val(name), path(data), val(umbridge_port), path(um_highway)
 
     script:
     """
@@ -264,7 +285,7 @@ process SERVE_MODEL_JL {
     # Start model server
     julia ${script} --name ${name} --data ${data} --port \$UMBRIDGE_PORT &
     SERVER_PID=\$!
-    trap 'kill \$SERVER_PID 2>/dev/null || true' EXIT INT TERM
+    trap 'kill \$SERVER_PID 2>/dev/null || true; rm -f $um_highway/model_info/READY $um_highway/umbridge_port/* $um_highway/uq_info/DONE' EXIT INT TERM
     echo "Model Server PID: \$SERVER_PID (trying port \$UMBRIDGE_PORT)"
 
     # Wait for model server to start
@@ -294,13 +315,12 @@ process SERVE_MODEL_JL {
 process MCMC_CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
+    cpus     { _nCalib }
+    maxForks _maxForks
 
     input:
     path script
-    val key
-    val params_yaml
-    path data
-    path um_highway
+    tuple val(key), val(params_yaml), path(data), path(um_highway), val(n_workers)
 
     output:
     tuple val(key), path("mcmc_output.npz"), emit: mcmc_output
@@ -401,10 +421,8 @@ process GENERATE_REPORT {
 }
 
 workflow {
-    def cfg = new groovy.yaml.YamlSlurper().parseText(file(params.config_file).text) as Map
     bpc_hemolysis(
         Channel.value(file(params.config_file)),
-        cfg.model.use_julia,
         "$projectDir/outputs".toString()
     )
 }

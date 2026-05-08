@@ -12,11 +12,7 @@ workflow {
         params_yaml = params_yaml
     ).flatten()
 
-    def use_julia = config.containsKey('groups')
-        ? config.groups.any { it.base_params?.model?.use_julia == true }
-        : config.base_params.model.use_julia
-
-    bpc_hemolysis(experiments, use_julia, exp_base_dir)
+    bpc_hemolysis(experiments, exp_base_dir)
 }
 
 process GENERATE_EXPERIMENTS {

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate parameter combinations from experiments.yml
-Creates experiment_<hash>.yml files for each combination
+Generate experiment parameter files from experiments.yml.
+
+Produces one experiment_<hash>.yml per combination of sweep dimensions
+(species x models x prior_configuration x calibrate_noise x use_julia),
+in the same format as the single-run params files.
 """
 
 import yaml
@@ -12,84 +15,79 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-def generate_hash(params_dict: Dict[str, Any]) -> str:
-    """Generate a short hash from parameter dict"""
-    params_str = '|'.join(
-        f"{k}={v}" for k, v in sorted(
-            [(k, str(v)) for k, v in params_dict.items()],
-            key=lambda x: x[0]
-        )
+def generate_hash(species: str, model_name: str, prior_config_name: str,
+                  calibrate_noise: bool) -> str:
+    key = f"species={species}|model={model_name}|prior_config={prior_config_name}|calibrate_noise={calibrate_noise}"
+    return hashlib.sha256(key.encode()).hexdigest()[:8]
+
+
+def build_priors(parameters: List[str], noise_parameters: List[str],
+                 calibrate_noise: bool, prior_config_name: str,
+                 prior_configurations: Dict, prior_library: Dict) -> List[Dict]:
+    prior_config = prior_configurations[prior_config_name]
+    params_to_include = list(parameters)
+    if calibrate_noise:
+        params_to_include += list(noise_parameters)
+
+    priors = []
+    for param_name in params_to_include:
+        if param_name not in prior_config:
+            print(f"Error: parameter '{param_name}' not found in prior configuration '{prior_config_name}'", file=sys.stderr)
+            sys.exit(1)
+        prior_type = prior_config[param_name]
+        if param_name not in prior_library:
+            print(f"Error: no prior library entry for parameter '{param_name}'", file=sys.stderr)
+            sys.exit(1)
+        if prior_type not in prior_library[param_name]:
+            print(f"Error: distribution type '{prior_type}' not defined for parameter '{param_name}' in prior_library", file=sys.stderr)
+            sys.exit(1)
+        priors.append({
+            'name': param_name,
+            'distribution': {
+                'type': prior_type,
+                'attribute': dict(prior_library[param_name][prior_type]),
+            }
+        })
+    return priors
+
+
+def build_experiment(species: str, model_name: str, prior_config_name: str,
+                     calibrate_noise: bool,
+                     config: Dict) -> Dict:
+    model_def = config['model_definitions'][model_name]
+    cal = config['calibration']
+    model_server = config.get('model_server', {})
+    parameters = model_def['parameters']
+    noise_parameters = cal['noise_parameters']
+
+    priors = build_priors(
+        parameters, noise_parameters, calibrate_noise,
+        prior_config_name, config['prior_configurations'], config['prior_library']
     )
-    return hashlib.sha256(params_str.encode()).hexdigest()[:8]
 
-
-def deep_merge(base: Dict, updates: Dict) -> Dict:
-    """Recursively merge updates into base dict"""
-    result = base.copy()
-    for key, value in updates.items():
-        if isinstance(result.get(key), dict) and isinstance(value, dict):
-            result[key] = deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
-def flatten_iterations(iterations: Dict, prefix: str = "") -> Dict:
-    """Flatten nested iteration parameters using dot notation"""
-    flat = {}
-
-    for key, value in iterations.items():
-        new_key = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, dict):
-            flat.update(flatten_iterations(value, new_key))
-        else:
-            flat[new_key] = value
-
-    return flat
-
-
-def unflatten_dict(flat_dict: Dict) -> Dict:
-    """Convert flat dict with dot notation back to nested dict"""
-    result = {}
-
-    for key, value in flat_dict.items():
-        parts = key.split('.')
-        current = result
-        for part in parts[:-1]:
-            if part not in current:
-                current[part] = {}
-            current = current[part]
-        current[parts[-1]] = value
-
-    return result
-
-
-def generate_combinations(experiment_config: Dict) -> List[Dict]:
-    """Generate all parameter combinations from experiments config"""
-    base_params = experiment_config.get('base_params', {})
-    iteration_params = experiment_config.get('iterations', {})
-
-    if not iteration_params:
-        return [base_params]
-
-    # Flatten nested iteration parameters to dot notation
-    flat_iterations = flatten_iterations(iteration_params)
-
-    # Get parameter names and their value lists
-    param_names = sorted(flat_iterations.keys())
-    value_lists = [flat_iterations[name] for name in param_names]
-
-    # Generate cartesian product of all value combinations
-    combinations = []
-    for values in itertools.product(*value_lists):
-        combo_dict = dict(zip(param_names, values))
-        # Convert flat dict with dot notation to nested dict
-        nested_combo = unflatten_dict(combo_dict)
-
-        merged = deep_merge(base_params, nested_combo)
-        combinations.append(merged)
-
-    return combinations
+    return {
+        'species': species,
+        'model': {
+            'name': model_name,
+            'control_variables': list(model_def['control_variables']),
+            'use_julia': model_def.get('use_julia', False),
+            'n_workers': model_server.get('n_workers', 1),
+        },
+        'calibration': {
+            'nwalkers': cal['nwalkers'],
+            'nburn': cal['nburn'],
+            'nsteps': cal['nsteps'],
+            'n_workers': cal.get('n_workers', 1),
+            'pool_type': cal.get('pool_type', 'serial'),
+            'parameters': list(parameters),
+            'noise_parameters': list(noise_parameters),
+            'calibrate_noise': calibrate_noise,
+            'noise_sigma': cal['noise_sigma'],
+            'data': list(cal['data']),
+            'likelihood': cal['likelihood'],
+            'priors': priors,
+        }
+    }
 
 
 def main():
@@ -104,43 +102,34 @@ def main():
         print(f"Error: {experiments_file} not found", file=sys.stderr)
         sys.exit(1)
 
-    # Load experiments config
     with open(experiments_file) as f:
         config = yaml.safe_load(f)
 
-    # Support both single-group (base_params + iterations) and multi-group formats
-    if 'groups' in config:
-        groups = config['groups']
-    else:
-        groups = [config]
+    sweep = config['sweep']
+    dim_values = [
+        sweep['species'],
+        sweep['models'],
+        sweep['prior_configuration'],
+        sweep['calibrate_noise'],
+    ]
 
-    combinations = []
-    for group in groups:
-        group_combinations = generate_combinations(group)
-        combinations.extend(group_combinations)
-        print(f"Group '{group.get('name', 'default')}': {len(group_combinations)} combinations", file=sys.stderr)
-
-    print(f"Generated {len(combinations)} parameter combinations total", file=sys.stderr)
-
-    # Create output directory if not current directory
     if output_dir != Path("."):
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write params files
-    for params in combinations:
-        hash_val = generate_hash(params)
+    count = 0
+    for species, model_name, prior_config_name, calibrate_noise in itertools.product(*dim_values):
+        params = build_experiment(species, model_name, prior_config_name, calibrate_noise, config)
+        hash_val = generate_hash(species, model_name, prior_config_name, calibrate_noise)
+        params['experiment_hash'] = hash_val
 
-        # Add experiment_hash to params
-        params_with_hash = {**params, 'experiment_hash': hash_val}
-
-        # Write to file
         output_file = output_dir / f"experiment_{hash_val}.yml"
         with open(output_file, 'w') as f:
-            yaml.dump(params_with_hash, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(params, f, default_flow_style=False, sort_keys=False)
 
         print(f"Created {output_file}", file=sys.stderr)
+        count += 1
 
-    print(f"All params files written to {output_dir}", file=sys.stderr)
+    print(f"Generated {count} experiment files in {output_dir}", file=sys.stderr)
 
 
 if __name__ == '__main__':
