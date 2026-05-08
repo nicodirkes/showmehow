@@ -379,7 +379,6 @@ process RUN_DIAGNOSTICS {
 }
 
 process BUNDLE_OUTPUTS {
-    publishDir { output_base_dir }, mode: 'copy'
 
     input:
     val output_base_dir
@@ -407,13 +406,15 @@ process BUNDLE_OUTPUTS {
     cp ${mcmc_trace} "${bundle_name}/"
     cp ${mcmc_idata} "${bundle_name}/"
     cp -r ${mcmc_diagnostics} "${bundle_name}/"
+
+    mkdir -p "${output_base_dir}"
+    cp -r "${bundle_name}" "${output_base_dir}/"
     """
 }
 
 
 process GENERATE_REPORT {
     conda "$moduleDir/report/environment.yml"
-    publishDir { "${output_base_dir}/${bundle_dir.name}" }, mode: 'copy'
 
     input:
     path script
@@ -429,6 +430,7 @@ process GENERATE_REPORT {
     python3 ${script} \\
         --bundle-dir ${bundle_dir} \\
         --output report.pdf
+    cp report.pdf "${output_base_dir}/${bundle_dir.name}/"
     """
 }
 
