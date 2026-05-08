@@ -1,0 +1,93 @@
+import hashlib, glob, time, uuid, yaml
+from pathlib import Path
+
+if "run_id" in config:
+    RUN_ID = config["run_id"]
+else:
+    RUN_ID = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+
+WORK = f".work-snakemake/{RUN_ID}"
+EXP_DIR = f"{WORK}/config/experiments"
+
+
+def experiment_port(experiment_id: str) -> int:
+    h = int(hashlib.md5(experiment_id.encode()).hexdigest()[:8], 16)
+    return 16384 + (h % (31767 - 16384))
+
+
+_exp_cfgs: dict = {}
+
+
+def get_exp_cfg(experiment_id: str) -> dict:
+    if not _exp_cfgs:
+        for f in glob.glob(f"{EXP_DIR}/experiment_*.yml"):
+            _exp_cfgs[Path(f).stem] = yaml.safe_load(open(f))
+    return _exp_cfgs[experiment_id]
+
+
+def data_for_experiment(wc) -> str:
+    species = get_exp_cfg(wc.experiment)["species"]
+    return f"{WORK}/data/data_ding_{species}_processed.csv"
+
+
+if "experiments_file" in config:
+    RUN_MODE = "batch"
+elif "config_file" in config:
+    RUN_MODE = "single"
+else:
+    raise ValueError(
+        "Pass --config experiments_file=experiments.yml  (batch)\n"
+        "  or --config config_file=params.yml            (single experiment)"
+    )
+
+include: "workflow/rules/pull_data.smk"
+include: "workflow/rules/preprocess.smk"
+include: "workflow/rules/serve_model.smk"
+include: "workflow/rules/mcmc.smk"
+include: "workflow/rules/diagnostics.smk"
+include: "workflow/rules/bundle.smk"
+include: "workflow/rules/report.smk"
+
+if RUN_MODE == "batch":
+    checkpoint generate_experiments:
+        input:  config["experiments_file"]
+        output: directory(EXP_DIR)
+        conda:  "experiments/environment.yml"
+        shell:
+            "python3 experiments/generate_experiments.py {input} {output}"
+
+    def _get_experiment_ids(wildcards):
+        checkpoints.generate_experiments.get()
+        return [Path(f).stem
+                for f in glob.glob(f"{EXP_DIR}/experiment_*.yml")]
+
+else:  # single
+    _single_cfg = yaml.safe_load(open(config["config_file"]))
+    if "experiment_hash" not in _single_cfg:
+        _single_cfg["experiment_hash"] = (
+            hashlib.sha256(open(config["config_file"], "rb").read()).hexdigest()[:8]
+        )
+    _SINGLE_ID = f"experiment_{_single_cfg['experiment_hash']}"
+    _exp_cfgs[_SINGLE_ID] = _single_cfg  # preload so input functions work at DAG-build time
+
+    rule prepare_single_experiment:
+        input:  config["config_file"]
+        output: f"{EXP_DIR}/{_SINGLE_ID}.yml"
+        shell:
+            "python3 workflow/scripts/prepare_single_experiment.py {input} $(dirname {output})"
+
+    def _get_experiment_ids(wildcards):
+        return [_SINGLE_ID]
+
+
+rule all:
+    default_target: True
+    input:
+        expand(
+            f"outputs/{RUN_ID}/{{experiment}}/report.pdf",
+            experiment=_get_experiment_ids(None)
+        ) if RUN_MODE == "single" else
+        lambda wc: expand(
+            f"outputs/{RUN_ID}/{{experiment}}/report.pdf",
+            experiment=_get_experiment_ids(wc)
+        )
