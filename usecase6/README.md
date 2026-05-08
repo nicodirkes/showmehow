@@ -20,3 +20,19 @@ conda activate showmehow
 ```
 nextflow run main.nf --config_file params.yml
 ```
+
+## Running Multiple Experiments
+
+1. Create and activate the conda environment
+```
+conda env create -f environment.yml
+conda activate showmehow
+```
+
+2. Setup the experiments in `experiments.yml`
+
+3. Run the workflow
+
+```
+nextflow run experiments.nf --config_file experiments.yml
+```
