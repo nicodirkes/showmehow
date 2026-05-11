@@ -276,7 +276,6 @@ process SERVE_MODEL_JL {
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
-    maxForks 1
 
     input:
     path script
@@ -328,7 +327,6 @@ process MCMC_CALIBRATION {
     conda "$moduleDir/mcmc/environment.yml"
     cache 'lenient'
     cpus     { _nCalib() }
-    maxForks { _maxForks() }
 
     input:
     path script
